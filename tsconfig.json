@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    // Which JavaScript version to output. Node 20 supports ES2022 features.
+    "target": "ES2022",
+    // How imports work. "NodeNext" follows Node's own rules for ES modules.
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    // Catch more mistakes at compile time (null checks, implicit any, ...).
+    "strict": true,
+    // Let us import CommonJS packages with `import x from "..."`.
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    // tsx runs the .ts files directly, so tsc is only used for type checking.
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules"]
+}
