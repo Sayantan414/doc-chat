@@ -1,0 +1,80 @@
+{
+  "document": "angular-qa.pdf",
+  "questions": [
+    {
+      "question": "My team still has an old app written in AngularJS. What would we gain by moving it to modern Angular?",
+      "validPages": [1],
+      "note": "Rephrased: Angular vs AngularJS"
+    },
+    {
+      "question": "Our app takes too long to open because everything is loaded at startup. How can Angular load parts of the app only when the user needs them?",
+      "validPages": [6, 10, 27],
+      "note": "Rephrased: lazy loading (page 6); also listed under optimizing (10) and production issues (27)"
+    },
+    {
+      "question": "If a user closes the browser tab, which browser storage keeps the data and which one loses it?",
+      "validPages": [10],
+      "note": "Rephrased: Local Storage vs Session Storage. Trap: topic 18 is on page 10"
+    },
+    {
+      "question": "How would you stop a user who is not logged in from opening an admin page?",
+      "validPages": [14, 25],
+      "note": "Rephrased: route guards (page 14) and role-based authorization (page 25)"
+    },
+    {
+      "question": "A component subscribes to a data stream, and the app gets slower every time you navigate away and come back. What is going wrong and how do you fix it?",
+      "validPages": [15, 19, 32],
+      "note": "Rephrased: memory leaks. Never says 'memory leak' or 'unsubscribe'"
+    },
+    {
+      "question": "Why can't you read an @Input() value inside the constructor?",
+      "validPages": [17],
+      "note": "Rephrased: constructor vs ngOnInit. Trap: topics 32-33 are on page 17"
+    },
+    {
+      "question": "What are the different ways a component's TypeScript code and its HTML template can talk to each other?",
+      "validPages": [22],
+      "note": "Rephrased: the four types of data binding"
+    },
+    {
+      "question": "When would you choose an Observable over a Promise for handling async data?",
+      "validPages": [28, 29, 30],
+      "note": "Rephrased: Promises vs Observables"
+    },
+    {
+      "question": "How do you make sure only one instance of a service exists in the whole app without adding it to any module's providers array?",
+      "validPages": [31],
+      "note": "Rephrased: providedIn 'root' / singleton service"
+    },
+    {
+      "question": "How can you stop a component's CSS from leaking out and affecting other parts of the app?",
+      "validPages": [32, 33],
+      "note": "Rephrased: ViewEncapsulation, split across two pages"
+    },
+    {
+      "question": "How would you pass a value from a parent component to a child, and then tell the parent when a button inside the child is clicked?",
+      "validPages": [6, 7],
+      "note": "Combined: @Input (page 6) + @Output with EventEmitter (page 7)"
+    },
+    {
+      "question": "A dashboard that shows a very large list has become slow. Which change detection and list rendering techniques would you use to speed it up?",
+      "validPages": [8, 10, 24, 26],
+      "note": "Combined: OnPush (pages 8, 24) + trackBy / virtual scroll (pages 10, 26)"
+    },
+    {
+      "question": "Should an API call go in the constructor or in ngOnInit, and how do you make sure its subscription doesn't cause a leak later?",
+      "validPages": [15, 16, 17, 19, 32],
+      "note": "Combined: API call placement (pages 16-17) + subscription cleanup (pages 15, 19, 32)"
+    },
+    {
+      "question": "How do you create reactive state with signal() and computed() in Angular?",
+      "expectUnknown": true,
+      "note": "Signals are not in the notes, but the model knows them: a tempting question"
+    },
+    {
+      "question": "How do you write a unit test for a component using TestBed?",
+      "expectUnknown": true,
+      "note": "Unit testing is not in the notes"
+    }
+  ]
+}

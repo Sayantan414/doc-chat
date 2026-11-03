@@ -1,28 +1,38 @@
-// Measures citation accuracy and "I don't know": asks fixed questions through the RAG pipeline,
-// checks that every [page N] is a page that really contains the answer, and that questions
-// the document can't answer get "I don't know" with no citation.
-// Run with: npx tsx server/src/scripts/checkCitations.ts
+// Measures the RAG pipeline on a test set: retrieval, citation format, page accuracy and "I don't know".
+// The questions live in a JSON file per document (see eval/), so any PDF can be tested without code changes.
+// Run with: npx tsx server/src/scripts/checkCitations.ts eval/bitcoin.json
 
+import { readFile } from "node:fs/promises";
 import { pool } from "../db/pool.js";
 import { llm } from "../llm/index.js";
 import { buildRagMessages } from "../retrieval/prompt.js";
 import { searchChunks } from "../retrieval/search.js";
 
-// Answerable: validPages = the pages that truly contain the answer in bitcoin.pdf.
+// Answerable: validPages = the pages of `document` that truly contain the answer.
 // Unanswerable: expectUnknown = the answer is not in the document, so "I don't know" is correct.
-type TestCase = { question: string; validPages: number[] } | { question: string; expectUnknown: true };
+// `note` is only for people reading the file; the checker ignores it.
+type TestCase =
+  | { question: string; validPages: number[]; note?: string }
+  | { question: string; expectUnknown: true; note?: string };
 
-const testCases: TestCase[] = [
-  { question: "What is proof-of-work?", validPages: [3] },
-  { question: "How does Bitcoin prevent double-spending?", validPages: [1, 2] },
-  { question: "How are blocks linked together?", validPages: [2, 3] },
-  { question: "What happens if an attacker controls more CPU power?", validPages: [4] },
-  { question: "What is the capital of France?", expectUnknown: true },
-  // Hard on purpose: the retrieved chunks are about crypto, and the model knows the answer.
-  { question: "Who invented Ethereum?", expectUnknown: true },
-];
+interface TestSet {
+  document: string; // file name as saved in the documents table, e.g. "bitcoin.pdf"
+  questions: TestCase[];
+}
+
+const filePath = process.argv[2];
+if (!filePath) {
+  console.error("Usage: npx tsx server/src/scripts/checkCitations.ts <test-set.json>");
+  process.exit(1);
+}
+
+// JSON.parse turns the file's text into a JS object. `as TestSet` tells TypeScript its shape;
+// TypeScript can't check a file at runtime, so the file must follow this shape.
+const testSet = JSON.parse(await readFile(filePath, "utf8")) as TestSet;
+console.log(`Test set: ${filePath} (${testSet.questions.length} questions on ${testSet.document})\n`);
 
 let answerable = 0;
+let retrievalOk = 0;
 let formatOk = 0;
 let pageOk = 0;
 let unanswerable = 0;
@@ -30,7 +40,7 @@ let unknownOk = 0;
 const runStart = performance.now();
 const mark = (pass: boolean) => (pass ? "✅" : "❌");
 
-for (const testCase of testCases) {
+for (const testCase of testSet.questions) {
   const { question } = testCase;
   const start = performance.now();
   const chunks = await searchChunks(question, 5);
@@ -46,6 +56,10 @@ for (const testCase of testCases) {
   // \s+ = one or more spaces, (\d+) captures the number, the i flag ignores upper/lower case.
   const mentions = [...answer.matchAll(/page\s+(\d+)/gi)].map((m) => Number(m[1]));
   const pages = [...new Set(mentions)];
+
+  // What the search found: pages from the test set's document, and how many chunks came from other documents.
+  const retrievedPages = chunks.filter((c) => c.documentName === testSet.document).map((c) => c.page);
+  const otherDoc = chunks.length - retrievedPages.length;
   const seconds = ((performance.now() - start) / 1000).toFixed(0);
 
   if ("expectUnknown" in testCase) {
@@ -56,21 +70,30 @@ for (const testCase of testCases) {
     if (unknownPass) unknownOk++;
 
     console.log(`${mark(unknownPass)} ${question}`);
-    console.log(`   expected "I don't know"  pages [${pages.join(", ")}]  (${seconds}s)`);
+    console.log(`   retrieved [${retrievedPages.join(", ")}]  other doc ${otherDoc}/${chunks.length}`);
+    console.log(`   expected "I don't know"  cited [${pages.join(", ")}]  (${seconds}s)`);
   } else {
-    // Two separate checks, because they need different fixes:
-    //   format: is every page mention written exactly as [page N]?
-    //   page:   is every mentioned page one that really contains the answer?
+    // Three separate checks, because each one needs a different fix:
+    //   retrieval: did the search bring at least one chunk from a valid page? (if not: fix search)
+    //   format:    is every page mention written exactly as [page N]?          (if not: fix prompt)
+    //   page:      is every cited page one that really contains the answer?    (if not: prompt/model)
+    // Note: citations don't name the document, so the page check assumes they refer to testSet.document.
     answerable++;
+    const { validPages } = testCase;
+    const retrievalPass = retrievedPages.some((p) => validPages.includes(p));
     const exact = [...answer.matchAll(/\[page (\d+)\]/g)];
     const formatPass = mentions.length > 0 && exact.length === mentions.length;
-    const pagePass = pages.length > 0 && pages.every((p) => testCase.validPages.includes(p));
+    const pagePass = pages.length > 0 && pages.every((p) => validPages.includes(p));
+    if (retrievalPass) retrievalOk++;
     if (formatPass) formatOk++;
     if (pagePass) pageOk++;
 
-    console.log(`${mark(formatPass && pagePass)} ${question}`);
+    console.log(`${mark(retrievalPass && formatPass && pagePass)} ${question}`);
     console.log(
-      `   pages [${pages.join(", ")}]  valid [${testCase.validPages.join(", ")}]  format ${mark(formatPass)}  page ${mark(pagePass)}  (${seconds}s)`,
+      `   retrieved [${retrievedPages.join(", ")}]  other doc ${otherDoc}/${chunks.length}  retrieval ${mark(retrievalPass)}`,
+    );
+    console.log(
+      `   cited [${pages.join(", ")}]  valid [${validPages.join(", ")}]  format ${mark(formatPass)}  page ${mark(pagePass)}  (${seconds}s)`,
     );
   }
   console.log(`   answer: ${answer.replace(/\s+/g, " ").trim()}\n`);
@@ -78,7 +101,8 @@ for (const testCase of testCases) {
 
 const minutes = ((performance.now() - runStart) / 60000).toFixed(1);
 console.log(
-  `Format: ${formatOk}/${answerable}   Page accuracy: ${pageOk}/${answerable}   I don't know: ${unknownOk}/${unanswerable}   (${minutes} min)`,
+  `Retrieval hit: ${retrievalOk}/${answerable}   Format: ${formatOk}/${answerable}   ` +
+    `Page accuracy: ${pageOk}/${answerable}   I don't know: ${unknownOk}/${unanswerable}   (${minutes} min)`,
 );
 
 await pool.end();

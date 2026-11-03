@@ -1,0 +1,32 @@
+{
+  "document": "bitcoin.pdf",
+  "questions": [
+    {
+      "question": "What is proof-of-work?",
+      "validPages": [3],
+      "note": "Trap: section '4. Proof-of-Work' is on page 3"
+    },
+    {
+      "question": "How does Bitcoin prevent double-spending?",
+      "validPages": [1, 2]
+    },
+    {
+      "question": "How are blocks linked together?",
+      "validPages": [2, 3]
+    },
+    {
+      "question": "What happens if an attacker controls more CPU power?",
+      "validPages": [4]
+    },
+    {
+      "question": "What is the capital of France?",
+      "expectUnknown": true,
+      "note": "Easy: completely unrelated"
+    },
+    {
+      "question": "Who invented Ethereum?",
+      "expectUnknown": true,
+      "note": "Hard: the retrieved chunks are about crypto, and the model knows the answer"
+    }
+  ]
+}
