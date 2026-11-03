@@ -2,7 +2,7 @@
 // The `ollama` library is a thin wrapper around Ollama's HTTP API at localhost:11434.
 
 import { Ollama } from "ollama";
-import type { ChatMessage, LlmProvider } from "./LlmProvider.js";
+import type { ChatMessage, ChatOptions, LlmProvider } from "./LlmProvider.js";
 
 export interface OllamaOptions {
   host: string; // where the Ollama server listens
@@ -19,13 +19,15 @@ export class OllamaProvider implements LlmProvider {
 
   // `async *` makes this an async generator: each `yield` hands one piece of
   // text to the caller's `for await` loop right away, without waiting for the rest.
-  async *chat(messages: ChatMessage[]): AsyncIterable<string> {
+  async *chat(messages: ChatMessage[], options?: ChatOptions): AsyncIterable<string> {
     // stream: true -> Ollama sends the answer back in many small parts
     // instead of one big response at the end.
     const stream = await this.client.chat({
       model: this.options.chatModel,
       messages,
       stream: true,
+      // Ollama's sampling settings. temperature: undefined -> Ollama's default.
+      options: { temperature: options?.temperature },
     });
 
     for await (const part of stream) {

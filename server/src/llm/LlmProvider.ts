@@ -13,10 +13,17 @@ export interface ChatMessage {
   content: string;
 }
 
+export interface ChatOptions {
+  // 0 = always pick the most likely token (same input -> same answer).
+  // Leave it out to use the provider's default (more varied answers).
+  temperature?: number;
+}
+
 export interface LlmProvider {
   // Sends the whole conversation and yields the answer piece by piece (tokens)
   // as the model generates them. Read it with: for await (const token of chat(...))
-  chat(messages: ChatMessage[]): AsyncIterable<string>;
+  // `options` is optional, so existing calls without it keep working.
+  chat(messages: ChatMessage[], options?: ChatOptions): AsyncIterable<string>;
 
   // Turns text into a vector (768 numbers for nomic-embed-text).
   embed(text: string): Promise<number[]>;
