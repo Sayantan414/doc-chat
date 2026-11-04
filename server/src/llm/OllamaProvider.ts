@@ -40,4 +40,18 @@ export class OllamaProvider implements LlmProvider {
     // embed() accepts many texts at once, so it returns a list of vectors. We sent one.
     return response.embeddings[0];
   }
+
+  async checkModels(): Promise<Record<string, boolean>> {
+    // GET /api/tags: the models pulled on this machine.
+    const { models } = await this.client.list();
+    const installed = new Set(models.map((m) => m.name));
+
+    // Ollama adds ":latest" when a name has no tag, so "nomic-embed-text"
+    // is listed as "nomic-embed-text:latest". Accept both forms.
+    const has = (name: string) => installed.has(name) || installed.has(`${name}:latest`);
+    return {
+      [this.options.chatModel]: has(this.options.chatModel),
+      [this.options.embedModel]: has(this.options.embedModel),
+    };
+  }
 }

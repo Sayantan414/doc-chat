@@ -27,4 +27,8 @@ export interface LlmProvider {
 
   // Turns text into a vector (768 numbers for nomic-embed-text).
   embed(text: string): Promise<number[]>;
+
+  // For the health check: is each model we use available? e.g. { "llama3.1:8b": true }
+  // Throws if the backend can't be reached at all.
+  checkModels(): Promise<Record<string, boolean>>;
 }
