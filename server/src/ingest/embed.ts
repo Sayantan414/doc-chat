@@ -12,7 +12,12 @@ import { loadPdf } from "./loadPdf.js";
 // to be found, "search_query: " for questions (used in retrieval). It improves search quality.
 export const DOCUMENT_PREFIX = "search_document: ";
 
-export async function ingestPdf(filePath: string): Promise<{ documentId: number; chunkCount: number }> {
+// `name` is what the document is called in the database. It defaults to the file
+// name, but uploads are saved under random names, so the API passes the original one.
+export async function ingestPdf(
+  filePath: string,
+  name = path.basename(filePath),
+): Promise<{ documentId: number; chunkCount: number }> {
   const pages = await loadPdf(filePath);
   const chunks = chunkPages(pages);
   console.log(`Loaded ${pages.length} pages, made ${chunks.length} chunks`);
@@ -36,7 +41,7 @@ export async function ingestPdf(filePath: string): Promise<{ documentId: number;
     // RETURNING id gives us back the id Postgres generated for the new row.
     const { rows } = await client.query<{ id: number }>(
       "INSERT INTO documents (name) VALUES ($1) RETURNING id",
-      [path.basename(filePath)],
+      [name],
     );
     const documentId = rows[0].id;
 
