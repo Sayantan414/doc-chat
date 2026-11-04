@@ -7,6 +7,7 @@ import { Router, type RequestHandler } from "express";
 import multer from "multer";
 import { pool } from "../db/pool.js";
 import { ingestPdf } from "../ingest/embed.js";
+import { httpError } from "./httpError.js";
 
 export const documentsRouter = Router();
 
@@ -39,11 +40,6 @@ async function findDocuments(id?: number): Promise<DocumentInfo[]> {
     uploadedAt: row.uploaded_at,
     chunks: row.chunks,
   }));
-}
-
-// An Error with an HTTP status; the JSON error handler in index.ts uses err.status.
-function httpError(status: number, message: string) {
-  return Object.assign(new Error(message), { status });
 }
 
 // multer parses multipart/form-data. dest: saves each file to uploads/ under a
@@ -83,7 +79,8 @@ documentsRouter.post("/documents", uploadPdf, async (req, res) => {
 
   try {
     // Synchronous for now: the response waits for load -> chunk -> embed -> save
-    // (about 1 s per chunk). Node closes requests after 300 s (server.requestTimeout).
+    // (about 1 s per chunk). Node's 300 s requestTimeout only limits RECEIVING the
+    // upload, not this processing, so a big PDF is slow but is not cut off.
     const { documentId } = await ingestPdf(req.file.path, req.file.originalname);
     const [document] = await findDocuments(documentId);
     res.status(201).json(document); // 201 Created: a new resource now exists

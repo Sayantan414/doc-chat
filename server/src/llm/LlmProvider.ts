@@ -17,6 +17,9 @@ export interface ChatOptions {
   // 0 = always pick the most likely token (same input -> same answer).
   // Leave it out to use the provider's default (more varied answers).
   temperature?: number;
+  // Abort it to stop generating, e.g. when the user closes the tab.
+  // Works at any moment, also while the model is still reading the prompt.
+  signal?: AbortSignal;
 }
 
 export interface LlmProvider {
