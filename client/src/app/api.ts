@@ -12,6 +12,13 @@ export interface DocumentInfo {
   duplicate?: boolean;
 }
 
+// POST /api/documents answers 202 with this for a new file: the PDF waits in
+// the server's queue and is ingested in the background.
+export interface QueuedUpload {
+  jobId: string;
+  name: string;
+}
+
 // One chunk the model was given (the "sources" event of POST /api/chat)
 export interface Source {
   documentName: string;

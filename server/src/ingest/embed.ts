@@ -25,7 +25,7 @@ export interface IngestResult {
 const UNIQUE_VIOLATION = "23505";
 
 // The earlier document with this hash, or undefined if there is none.
-async function findByHash(hash: string): Promise<IngestResult | undefined> {
+export async function findByHash(hash: string): Promise<IngestResult | undefined> {
   const { rows } = await pool.query<{ id: number; chunks: number }>(
     `SELECT d.id, COUNT(c.id)::int AS chunks
      FROM documents d LEFT JOIN chunks c ON c.document_id = d.id

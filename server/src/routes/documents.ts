@@ -1,14 +1,17 @@
 // GET  /api/documents: every uploaded PDF, newest first, with its chunk count.
 //      A count of 0 (or far fewer than expected) shows that ingestion went wrong.
-// POST /api/documents: upload one PDF (multipart field "file") and ingest it.
-//      201 + the new document, or 200 + the earlier document with duplicate: true
-//      when the same file (same bytes, any name) was uploaded before.
+// POST /api/documents: upload one PDF (multipart field "file").
+//      202 + { jobId }: the PDF is queued; a worker ingests it in the background.
+//      200 + the earlier document with duplicate: true when the same file
+//      (same bytes, any name) was uploaded before. Nothing is queued then.
 
 import { unlink } from "node:fs/promises";
 import { Router, type RequestHandler } from "express";
 import multer from "multer";
 import { pool } from "../db/pool.js";
-import { ingestPdf } from "../ingest/embed.js";
+import { findByHash } from "../ingest/embed.js";
+import { hashFile } from "../ingest/hashFile.js";
+import { ingestQueue } from "../queue/ingestQueue.js";
 import { httpError } from "./httpError.js";
 
 export const documentsRouter = Router();
@@ -78,17 +81,28 @@ documentsRouter.get("/documents", async (_req, res) => {
 
 documentsRouter.post("/documents", uploadPdf, async (req, res) => {
   if (!req.file) throw httpError(400, "No file uploaded (field name: file)");
+  const { path: filePath, originalname: name } = req.file;
 
+  // The worker deletes the file after ingesting it. Until the job is safely
+  // in the queue, this handler owns the file and must delete it on any exit.
+  let queued = false;
   try {
-    // Synchronous for now: the response waits for load -> chunk -> embed -> save
-    // (about 1 s per chunk). Node's 300 s requestTimeout only limits RECEIVING the
-    // upload, not this processing, so a big PDF is slow but is not cut off.
-    const { documentId, duplicate } = await ingestPdf(req.file.path, req.file.originalname);
-    const [document] = await findDocuments(documentId);
-    // 201 Created: a new resource now exists. 200: nothing new, here is the old one.
-    res.status(duplicate ? 200 : 201).json({ ...document, duplicate });
+    // The duplicate check stays here: it takes milliseconds, so the answer
+    // "already uploaded" comes at once instead of after a trip through the queue.
+    const earlier = await findByHash(await hashFile(filePath));
+    if (earlier) {
+      const [document] = await findDocuments(earlier.documentId);
+      res.json({ ...document, duplicate: true }); // 200
+      return;
+    }
+
+    // Only the path and name go into Redis, not the PDF itself.
+    const job = await ingestQueue.add("ingest", { filePath, name });
+    queued = true;
+    // 202 Accepted: "got it, the work happens later". The jobId is the token
+    // for asking about it (GET /api/jobs/:id comes in Task 5).
+    res.status(202).json({ jobId: job.id, name });
   } finally {
-    // The chunks are in Postgres now (or the upload failed), so the file is no longer needed.
-    await unlink(req.file.path);
+    if (!queued) await unlink(filePath);
   }
 });

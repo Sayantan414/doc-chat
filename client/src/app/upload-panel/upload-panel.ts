@@ -1,12 +1,12 @@
 import { DatePipe } from '@angular/common';
 import { HttpClient, HttpErrorResponse, HttpEventType } from '@angular/common/http';
 import { Component, inject, signal } from '@angular/core';
-import { DocumentInfo } from '../api';
+import { DocumentInfo, QueuedUpload } from '../api';
 
 // An upload has two phases:
 //   uploading  = the browser sends the bytes (we get progress events)
-//   processing = the server loads, chunks and embeds the PDF (~1 s per chunk);
-//                the server reports nothing until it's done, so no percentage
+//   processing = the server checks for a duplicate and queues the PDF
+//                (well under a second); the ingesting itself happens later
 interface UploadState {
   fileName: string;
   phase: 'uploading' | 'processing';
@@ -51,7 +51,7 @@ export class UploadPanel {
 
     // observe: 'events' + reportProgress: emit every progress event, not just the result.
     this.http
-      .post<DocumentInfo>('/api/documents', form, { observe: 'events', reportProgress: true })
+      .post<DocumentInfo | QueuedUpload>('/api/documents', form, { observe: 'events', reportProgress: true })
       .subscribe({
         next: (event) => {
           if (event.type === HttpEventType.UploadProgress) {
@@ -62,8 +62,16 @@ export class UploadPanel {
               phase: percent < 100 ? 'uploading' : 'processing',
               percent,
             });
+          } else if (event.type === HttpEventType.Response && event.status === 202) {
+            // A new file: the server queued it and answered at once.
+            const { jobId } = event.body as QueuedUpload;
+            this.upload.set(null);
+            this.message.set({
+              ok: true,
+              text: `Queued ${file.name} (job ${jobId}). It is processed in the background.`,
+            });
           } else if (event.type === HttpEventType.Response && event.body) {
-            const doc = event.body;
+            const doc = event.body as DocumentInfo;
             this.upload.set(null);
             const chunks = `${doc.chunks} ${doc.chunks === 1 ? 'chunk' : 'chunks'}`;
             if (doc.duplicate) {
