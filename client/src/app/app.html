@@ -1,10 +1,10 @@
-<main>
+<header>
   <h1>DocChat</h1>
 
-  @if (unreachable(); as message) {
-    <p class="bad">{{ message }}</p>
-  } @else if (health(); as h) {
-    <p>
+  <div class="health">
+    @if (unreachable(); as message) {
+      <span class="bad">{{ message }}</span>
+    } @else if (health(); as h) {
       <span [class]="h.db.ok ? 'ok' : 'bad'">
         Database {{ h.db.ok ? 'ok' : 'down: ' + h.db.error }}
       </span>
@@ -15,10 +15,18 @@
       @if (modelNames()) {
         <small>({{ modelNames() }})</small>
       }
-    </p>
-  } @else {
-    <p>Checking the server…</p>
-  }
+    } @else {
+      <span>Checking the server…</span>
+    }
+    <button type="button" (click)="checkHealth()">Check again</button>
+  </div>
+</header>
 
-  <button type="button" (click)="checkHealth()">Check again</button>
-</main>
+<div class="layout">
+  <aside>
+    <app-upload-panel />
+  </aside>
+  <main>
+    <app-chat-panel />
+  </main>
+</div>

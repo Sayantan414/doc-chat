@@ -1,0 +1,49 @@
+@if (citations().length) {
+  <div class="chips">
+    @for (c of citations(); track key(c)) {
+      <button
+        type="button"
+        class="chip"
+        [class.active]="selectedKey() === key(c)"
+        [class.unbacked]="!c.matches.length"
+        [title]="c.matches.length ? 'Show the source text' : 'No chunk from this page was given to the model'"
+        (click)="toggle(c)"
+      >
+        page {{ c.page }}@if (c.documentName) { · {{ c.documentName }} }@if (!c.matches.length) { ⚠ }
+      </button>
+    }
+  </div>
+}
+
+@if (selected(); as c) {
+  <div class="source-panel">
+    @for (s of c.matches; track $index) {
+      <figure>
+        <figcaption>
+          {{ s.documentName }}, page {{ s.page }}
+          <span class="distance">distance {{ s.distance | number: '1.3-3' }}</span>
+        </figcaption>
+        <blockquote>{{ s.content }}</blockquote>
+      </figure>
+    } @empty {
+      <p class="warning">
+        The answer cites page {{ c.page }}, but no chunk from page {{ c.page }} was given to the
+        model, so this citation is not backed by the sources.
+      </p>
+    }
+  </div>
+}
+
+@if (sources().length) {
+  <details>
+    <summary>{{ sources().length }} passages were given to the model</summary>
+    <ul>
+      @for (s of sources(); track $index) {
+        <li>
+          {{ s.documentName }}, page {{ s.page }}
+          <span class="distance">({{ s.distance | number: '1.3-3' }})</span>
+        </li>
+      }
+    </ul>
+  </details>
+}

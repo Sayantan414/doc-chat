@@ -1,0 +1,45 @@
+<section class="upload-panel">
+  <h2>Documents</h2>
+
+  <label class="upload-button" [class.disabled]="upload()">
+    <input
+      type="file"
+      accept="application/pdf"
+      [disabled]="upload() !== null"
+      (change)="onFileSelected($event)"
+    />
+    Upload a PDF
+  </label>
+
+  @if (upload(); as u) {
+    <div class="progress-box">
+      <div class="file-name">{{ u.fileName }}</div>
+      @if (u.phase === 'uploading') {
+        <progress max="100" [value]="u.percent"></progress>
+        <small>Uploading… {{ u.percent }}%</small>
+      } @else {
+        <!-- no value = an indeterminate (moving) bar: we can't know how far it is -->
+        <progress></progress>
+        <small>Reading, chunking and embedding… (about 1 s per chunk)</small>
+      }
+    </div>
+  }
+
+  @if (message(); as m) {
+    <p [class]="m.ok ? 'ok' : 'bad'">{{ m.text }}</p>
+  }
+
+  <ul class="documents">
+    @for (doc of documents(); track doc.id) {
+      <li>
+        <span class="name">{{ doc.name }}</span>
+        <small>
+          {{ doc.chunks }} {{ doc.chunks === 1 ? 'chunk' : 'chunks' }} ·
+          {{ doc.uploadedAt | date: 'd MMM y, HH:mm' }}
+        </small>
+      </li>
+    } @empty {
+      <li class="empty">No documents yet.</li>
+    }
+  </ul>
+</section>

@@ -1,4 +1,6 @@
 import { Component, computed, signal } from '@angular/core';
+import { ChatPanel } from './chat-panel/chat-panel';
+import { UploadPanel } from './upload-panel/upload-panel';
 
 // Same shape as GET /api/health on the server (server/src/routes/health.ts).
 interface Health {
@@ -9,7 +11,7 @@ interface Health {
 
 @Component({
   selector: 'app-root',
-  imports: [],
+  imports: [ChatPanel, UploadPanel],
   templateUrl: './app.html',
   styleUrl: './app.css',
 })

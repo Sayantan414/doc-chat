@@ -1,0 +1,67 @@
+.upload-panel {
+  padding: 1rem;
+}
+
+h2 {
+  font-size: 1rem;
+  margin: 0 0 0.75rem;
+}
+
+/* The real <input type="file"> is hidden; the label around it is the button. */
+.upload-button {
+  display: inline-block;
+  padding: 0.45rem 1rem;
+  border-radius: 6px;
+  background: #1f883d;
+  color: white;
+  cursor: pointer;
+}
+.upload-button input {
+  display: none;
+}
+.upload-button.disabled {
+  background: #94d3a2;
+  cursor: default;
+}
+
+.progress-box {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.file-name {
+  font-size: 0.85rem;
+  word-break: break-all;
+}
+progress {
+  width: 100%;
+}
+
+.ok {
+  color: #1a7f37;
+}
+.bad {
+  color: #cf222e;
+}
+
+.documents {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 0;
+}
+.documents li {
+  padding: 0.5rem 0;
+  border-top: 1px solid #d0d7de;
+  display: flex;
+  flex-direction: column;
+}
+.documents .name {
+  word-break: break-all;
+}
+.documents small {
+  color: #57606a;
+}
+.documents .empty {
+  color: #57606a;
+}

@@ -1,0 +1,61 @@
+<section class="chat">
+  <div class="messages" #messages>
+    @for (turn of turns(); track $index) {
+      <div class="bubble user">{{ turn.question }}</div>
+
+      <div class="bubble assistant">
+        @switch (turn.status) {
+          @case ('sending') {
+            <p class="muted">Searching your documents…</p>
+          }
+          @case ('reading') {
+            <p class="muted">
+              The model is reading the matching passages… {{ secondsSince(turn.startedAt) }} s
+              <br /><small>On this CPU the first words take 45–100 s.</small>
+            </p>
+          }
+        }
+
+        @if (turn.answer) {
+          <markdown [data]="turn.answer" />
+        }
+        @if (turn.status === 'streaming') {
+          <span class="cursor">▍</span>
+        }
+        @if (turn.status === 'stopped') {
+          <p class="muted">Stopped.</p>
+        }
+        @if (turn.status === 'error') {
+          <p class="bad">{{ turn.error }}</p>
+        }
+
+        @if (turn.status === 'done') {
+          <app-citations [answer]="turn.answer" [sources]="turn.sources" />
+          @if (turn.timings; as t) {
+            <p class="meta">
+              first words after {{ (t.firstTokenMs ?? 0) / 1000 | number: '1.0-0' }} s · total
+              {{ t.totalMs / 1000 | number: '1.0-0' }} s
+            </p>
+          }
+        }
+      </div>
+    } @empty {
+      <p class="muted empty">Ask a question about your documents.</p>
+    }
+  </div>
+
+  <form (submit)="$event.preventDefault(); ask()">
+    <textarea
+      rows="2"
+      placeholder="Ask a question… (Enter to send, Shift+Enter for a new line)"
+      [value]="question()"
+      (input)="question.set($any($event.target).value)"
+      (keydown)="onKeydown($event)"
+    ></textarea>
+    @if (busy()) {
+      <button type="button" class="stop" (click)="stop()">Stop</button>
+    } @else {
+      <button type="submit" [disabled]="!question().trim()">Ask</button>
+    }
+  </form>
+</section>
