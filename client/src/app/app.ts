@@ -6,6 +6,7 @@ import { UploadPanel } from './upload-panel/upload-panel';
 interface Health {
   status: 'ok' | 'error';
   db: { ok: boolean; ms: number; error?: string };
+  redis: { ok: boolean; ms: number; error?: string };
   ollama: { ok: boolean; ms: number; models?: Record<string, boolean>; error?: string };
 }
 

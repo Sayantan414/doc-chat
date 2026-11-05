@@ -9,6 +9,10 @@
         Database {{ h.db.ok ? 'ok' : 'down: ' + h.db.error }}
       </span>
       ·
+      <span [class]="h.redis.ok ? 'ok' : 'bad'">
+        Redis {{ h.redis.ok ? 'ok' : 'down: ' + h.redis.error }}
+      </span>
+      ·
       <span [class]="h.ollama.ok ? 'ok' : 'bad'">
         Ollama {{ h.ollama.ok ? 'ok' : 'problem: ' + (h.ollama.error ?? 'model missing') }}
       </span>

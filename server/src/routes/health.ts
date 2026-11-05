@@ -1,9 +1,10 @@
 // GET /api/health: is the app able to work right now?
-// Express being up is not enough: we also need Postgres (the ragdb container)
+// Express being up is not enough: we also need Postgres and Redis (docker compose)
 // and Ollama with both models pulled. Checks each one for real.
 
 import { Router } from "express";
 import { pool } from "../db/pool.js";
+import { redis } from "../db/redis.js";
 import { llm } from "../llm/index.js";
 
 export const healthRouter = Router();
@@ -33,20 +34,22 @@ async function timed<T>(check: () => Promise<T>) {
 
 healthRouter.get("/health", async (_req, res) => {
   // Both checks run at the same time, so the endpoint takes max(db, ollama), not the sum.
-  const [db, ollama] = await Promise.all([
+  const [db, redisCheck, ollama] = await Promise.all([
     timed(() => pool.query("SELECT 1")),
+    timed(() => redis.ping()), // answers "PONG"
     timed(() => llm.checkModels()),
   ]);
 
   // Reachable but a model not pulled still counts as a failure.
   const models = ollama.ok ? (ollama.result as Record<string, boolean>) : undefined;
   const ollamaOk = ollama.ok && Object.values(models!).every(Boolean);
-  const allOk = db.ok && ollamaOk;
+  const allOk = db.ok && redisCheck.ok && ollamaOk;
 
   // 503 Service Unavailable tells clients (and the UI later) "up, but can't serve".
   res.status(allOk ? 200 : 503).json({
     status: allOk ? "ok" : "error",
     db: { ok: db.ok, ms: db.ms, error: db.error },
+    redis: { ok: redisCheck.ok, ms: redisCheck.ms, error: redisCheck.error },
     ollama: { ok: ollamaOk, ms: ollama.ms, models, error: ollama.error },
   });
 });

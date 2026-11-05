@@ -1,0 +1,38 @@
+# The services DocChat needs, started together with: docker compose up -d
+# (stop them with: docker compose down -- the data stays in the volumes)
+# Ollama still runs on Windows itself, outside Docker.
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5434:5432" # 5432 and 5433 are taken by the local Postgres 16/17
+    volumes:
+      - ragdata:/var/lib/postgresql/data
+    # "Running" is not the same as "accepting connections": pg_isready checks the latter.
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  # Created earlier by "docker run ... -v ragdata:..." and holds all documents and chunks.
+  # external: compose uses that existing volume and never creates or deletes it.
+  ragdata:
+    external: true
+  redisdata:

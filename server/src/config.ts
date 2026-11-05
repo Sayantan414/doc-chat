@@ -21,6 +21,7 @@ export const config = {
   chatModel: required("CHAT_MODEL"),
   embedModel: required("EMBED_MODEL"),
   databaseUrl: required("DATABASE_URL"),
+  redisUrl: required("REDIS_URL"),
   // Optional: the API server's port. Defaults to 3000.
   port: Number(process.env.PORT ?? 3000),
 };
