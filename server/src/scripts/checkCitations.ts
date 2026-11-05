@@ -81,7 +81,9 @@ for (const testCase of testSet.questions) {
     answerable++;
     const { validPages } = testCase;
     const retrievalPass = retrievedPages.some((p) => validPages.includes(p));
-    const exact = [...answer.matchAll(/\[page (\d+)\]/g)];
+    // \s, not " ": gpt-oss (Groq) writes "[page 3]" with a narrow no-break space
+    // (U+202F). It looks identical and the UI's chips accept it, so it counts as exact.
+    const exact = [...answer.matchAll(/\[page\s(\d+)\]/g)];
     const formatPass = mentions.length > 0 && exact.length === mentions.length;
     const pagePass = pages.length > 0 && pages.every((p) => validPages.includes(p));
     if (retrievalPass) retrievalOk++;

@@ -68,8 +68,10 @@ export class Citations {
 // The prompt labels chunks "[page 3] (bitcoin.pdf)", and the model copies that in
 // different ways. All of these are page 3:
 //   [page 3]    [page 3 (bitcoin.pdf)]    [page 3] (bitcoin.pdf)
+// gpt-oss (Groq) adds two variants: a narrow no-break space (U+202F) instead of
+// " " (so \s, not " "), and full-width brackets 【page 3】 (U+3010, U+3011).
 // Group 1 = page, group 2 = name inside the brackets, group 3 = name after them.
-const CITATION = /\[page (\d+)(?: \(([^)\]]+)\))?\](?: \(([^)]+)\))?/gi;
+const CITATION = /[[【]page\s+(\d+)(?:\s+\(([^)\]】]+)\))?[\]】](?:\s+\(([^)]+)\))?/gi;
 
 function citationKey(page: number, documentName?: string) {
   return `${documentName ?? ''}#${page}`;

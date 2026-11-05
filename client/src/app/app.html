@@ -13,8 +13,8 @@
         Redis {{ h.redis.ok ? 'ok' : 'down: ' + h.redis.error }}
       </span>
       ·
-      <span [class]="h.ollama.ok ? 'ok' : 'bad'">
-        Ollama {{ h.ollama.ok ? 'ok' : 'problem: ' + (h.ollama.error ?? 'model missing') }}
+      <span [class]="h.llm.ok ? 'ok' : 'bad'">
+        Model {{ h.llm.ok ? 'ok' : 'problem: ' + (h.llm.error ?? 'model missing') }}
       </span>
       @if (modelNames()) {
         <small>({{ modelNames() }})</small>

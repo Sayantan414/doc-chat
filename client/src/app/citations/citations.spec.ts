@@ -39,6 +39,14 @@ describe('Citations', () => {
     ]);
   });
 
+  it('reads [page N] with a narrow no-break space (gpt-oss on Groq)', async () => {
+    expect(await chips('Blocks are chained [page 3].', sources)).toEqual(['page 3']);
+  });
+
+  it('reads full-width brackets 【page N】 (gpt-oss on Groq)', async () => {
+    expect(await chips('Rendered on the server【page 3】.', sources)).toEqual(['page 3']);
+  });
+
   it('ignores a name in brackets that is not a source file', async () => {
     expect(await chips('See [page 3] (see above).', sources)).toEqual(['page 3']);
   });

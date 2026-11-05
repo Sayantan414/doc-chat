@@ -7,7 +7,7 @@ interface Health {
   status: 'ok' | 'error';
   db: { ok: boolean; ms: number; error?: string };
   redis: { ok: boolean; ms: number; error?: string };
-  ollama: { ok: boolean; ms: number; models?: Record<string, boolean>; error?: string };
+  llm: { ok: boolean; ms: number; models?: Record<string, boolean>; error?: string };
 }
 
 @Component({
@@ -21,7 +21,7 @@ export class App {
   // Set when the API can't be reached at all (Express not running).
   protected readonly unreachable = signal<string | null>(null);
   protected readonly modelNames = computed(() =>
-    Object.keys(this.health()?.ollama.models ?? {}).join(', '),
+    Object.keys(this.health()?.llm.models ?? {}).join(', '),
   );
 
   constructor() {
