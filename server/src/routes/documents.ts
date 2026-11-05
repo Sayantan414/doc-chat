@@ -1,6 +1,8 @@
 // GET  /api/documents: every uploaded PDF, newest first, with its chunk count.
 //      A count of 0 (or far fewer than expected) shows that ingestion went wrong.
 // POST /api/documents: upload one PDF (multipart field "file") and ingest it.
+//      201 + the new document, or 200 + the earlier document with duplicate: true
+//      when the same file (same bytes, any name) was uploaded before.
 
 import { unlink } from "node:fs/promises";
 import { Router, type RequestHandler } from "express";
@@ -81,9 +83,10 @@ documentsRouter.post("/documents", uploadPdf, async (req, res) => {
     // Synchronous for now: the response waits for load -> chunk -> embed -> save
     // (about 1 s per chunk). Node's 300 s requestTimeout only limits RECEIVING the
     // upload, not this processing, so a big PDF is slow but is not cut off.
-    const { documentId } = await ingestPdf(req.file.path, req.file.originalname);
+    const { documentId, duplicate } = await ingestPdf(req.file.path, req.file.originalname);
     const [document] = await findDocuments(documentId);
-    res.status(201).json(document); // 201 Created: a new resource now exists
+    // 201 Created: a new resource now exists. 200: nothing new, here is the old one.
+    res.status(duplicate ? 200 : 201).json({ ...document, duplicate });
   } finally {
     // The chunks are in Postgres now (or the upload failed), so the file is no longer needed.
     await unlink(req.file.path);

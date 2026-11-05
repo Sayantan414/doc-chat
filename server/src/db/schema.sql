@@ -10,6 +10,13 @@ CREATE TABLE IF NOT EXISTS documents (
   uploaded_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- SHA-256 of the file's bytes (64 hex characters), so the same PDF is ingested
+-- only once, whatever it is called. UNIQUE makes Postgres refuse a second row
+-- with the same hash, even when two uploads of one file arrive together.
+-- Added after the table existed, hence ALTER ... IF NOT EXISTS. Old rows get
+-- NULL; UNIQUE allows any number of NULLs.
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS content_hash TEXT UNIQUE;
+
 -- One row per chunk of text. Each chunk keeps its page number for citations.
 CREATE TABLE IF NOT EXISTS chunks (
   id          SERIAL PRIMARY KEY,

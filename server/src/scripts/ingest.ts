@@ -11,9 +11,13 @@ if (!filePath) {
 }
 
 const start = Date.now();
-const { documentId, chunkCount } = await ingestPdf(filePath);
+const { documentId, chunkCount, duplicate } = await ingestPdf(filePath);
 const seconds = ((Date.now() - start) / 1000).toFixed(1);
-console.log(`Saved document ${documentId} with ${chunkCount} chunks in ${seconds}s`);
+console.log(
+  duplicate
+    ? `Already ingested as document ${documentId} (${chunkCount} chunks), skipped in ${seconds}s`
+    : `Saved document ${documentId} with ${chunkCount} chunks in ${seconds}s`,
+);
 
 // Close the pool's open connections, otherwise Node keeps running.
 await pool.end();

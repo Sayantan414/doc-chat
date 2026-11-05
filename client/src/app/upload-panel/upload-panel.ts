@@ -66,8 +66,16 @@ export class UploadPanel {
             const doc = event.body;
             this.upload.set(null);
             const chunks = `${doc.chunks} ${doc.chunks === 1 ? 'chunk' : 'chunks'}`;
-            this.message.set({ ok: true, text: `Added ${doc.name} (${chunks})` });
-            this.documents.update((documents) => [doc, ...documents]);
+            if (doc.duplicate) {
+              // Already in the list, so don't add it again.
+              this.message.set({
+                ok: true,
+                text: `${file.name} was already uploaded as ${doc.name} (${chunks}), so it was skipped`,
+              });
+            } else {
+              this.message.set({ ok: true, text: `Added ${doc.name} (${chunks})` });
+              this.documents.update((documents) => [doc, ...documents]);
+            }
           }
         },
         error: (err: HttpErrorResponse) => {

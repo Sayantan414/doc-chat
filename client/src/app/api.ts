@@ -7,6 +7,9 @@ export interface DocumentInfo {
   name: string;
   uploadedAt: string; // ISO date string
   chunks: number;
+  // Only in the POST /api/documents response: true when this exact file
+  // was uploaded before (under any name) and was not ingested again.
+  duplicate?: boolean;
 }
 
 // One chunk the model was given (the "sources" event of POST /api/chat)
