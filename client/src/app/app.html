@@ -1,0 +1,24 @@
+<main>
+  <h1>DocChat</h1>
+
+  @if (unreachable(); as message) {
+    <p class="bad">{{ message }}</p>
+  } @else if (health(); as h) {
+    <p>
+      <span [class]="h.db.ok ? 'ok' : 'bad'">
+        Database {{ h.db.ok ? 'ok' : 'down: ' + h.db.error }}
+      </span>
+      ·
+      <span [class]="h.ollama.ok ? 'ok' : 'bad'">
+        Ollama {{ h.ollama.ok ? 'ok' : 'problem: ' + (h.ollama.error ?? 'model missing') }}
+      </span>
+      @if (modelNames()) {
+        <small>({{ modelNames() }})</small>
+      }
+    </p>
+  } @else {
+    <p>Checking the server…</p>
+  }
+
+  <button type="button" (click)="checkHealth()">Check again</button>
+</main>

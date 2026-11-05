@@ -46,10 +46,12 @@ chatRouter.post("/chat", async (req, res) => {
     "Cache-Control": "no-cache", // never store a half-finished stream
     Connection: "keep-alive",
   });
-  // writeHead only queues the headers; without this they went out together with
-  // the first token (measured: 41.9 s). Send them now, so the client knows at once
-  // that the answer is on its way.
-  res.flushHeaders();
+  // Send something right away, so the client knows at once that the answer is on
+  // its way. writeHead alone only queues the headers (they went out with the first
+  // token: 41.9 s), and flushHeaders() wasn't enough behind the Angular dev proxy,
+  // which waits for body bytes (82 s). An SSE comment (a line starting with ":") is
+  // real body data that every SSE parser ignores, so headers and all go out now.
+  res.write(": connected\n\n");
 
   // If the client leaves early, abort the model right away so Ollama stops working
   // for nobody (it handles one request at a time, so the next question would wait).
