@@ -37,11 +37,15 @@ export async function findByHash(hash: string): Promise<IngestResult | undefined
   return { documentId: rows[0].id, chunkCount: rows[0].chunks, duplicate: true };
 }
 
+// Called after each chunk is embedded, e.g. so the worker can report "12 of 36".
+export type OnProgress = (done: number, total: number) => void | Promise<void>;
+
 // `name` is what the document is called in the database. It defaults to the file
 // name, but uploads are saved under random names, so the API passes the original one.
 export async function ingestPdf(
   filePath: string,
   name = path.basename(filePath),
+  onProgress?: OnProgress,
 ): Promise<IngestResult> {
   // Check first: hashing takes milliseconds, embedding takes most of a minute.
   const hash = await hashFile(filePath);
@@ -62,6 +66,7 @@ export async function ingestPdf(
     embeddings.push(await llm.embed(DOCUMENT_PREFIX + chunk.content));
     // \r moves the cursor back to the line start, so the counter updates in place.
     process.stdout.write(`\rEmbedding ${i + 1}/${chunks.length}`);
+    await onProgress?.(i + 1, chunks.length);
   }
   process.stdout.write("\n");
 

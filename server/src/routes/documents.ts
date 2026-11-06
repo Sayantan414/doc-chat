@@ -6,6 +6,7 @@
 //      (same bytes, any name) was uploaded before. Nothing is queued then.
 
 import { unlink } from "node:fs/promises";
+import path from "node:path";
 import { Router, type RequestHandler } from "express";
 import multer from "multer";
 import { pool } from "../db/pool.js";
@@ -81,7 +82,10 @@ documentsRouter.get("/documents", async (_req, res) => {
 
 documentsRouter.post("/documents", uploadPdf, async (req, res) => {
   if (!req.file) throw httpError(400, "No file uploaded (field name: file)");
-  const { path: filePath, originalname: name } = req.file;
+  // multer gives a path relative to the API's folder (uploadsf9a...). The worker
+  // is another process that may start elsewhere, so the job gets the full path.
+  const filePath = path.resolve(req.file.path);
+  const name = req.file.originalname;
 
   // The worker deletes the file after ingesting it. Until the job is safely
   // in the queue, this handler owns the file and must delete it on any exit.

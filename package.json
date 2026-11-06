@@ -4,6 +4,7 @@
   "description": "",
   "scripts": {
     "dev": "tsx watch server/src/index.ts",
+    "worker": "tsx server/src/worker.ts",
     "typecheck": "tsc"
   },
   "keywords": [],
