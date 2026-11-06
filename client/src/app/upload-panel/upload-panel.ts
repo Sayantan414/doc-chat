@@ -33,6 +33,8 @@ export class UploadPanel {
   protected readonly documents = signal<DocumentInfo[]>([]);
   protected readonly upload = signal<UploadState | null>(null);
   protected readonly message = signal<{ text: string; ok: boolean } | null>(null);
+  // The id of the document being deleted right now, to disable its button.
+  protected readonly deleting = signal<number | null>(null);
   // Jobs the server has not finished yet (waiting or active), oldest first.
   protected readonly jobs = signal<JobInfo[]>([]);
 
@@ -114,6 +116,29 @@ export class UploadPanel {
           this.message.set({ ok: false, text: `Upload failed: ${errorText(err)}` });
         },
       });
+  }
+
+  protected deleteDocument(doc: DocumentInfo) {
+    // A delete cannot be undone (the PDF would have to be uploaded and embedded
+    // again), so ask first.
+    if (!confirm(`Delete ${doc.name} and its ${chunkText(doc.chunks)}?`)) return;
+
+    this.deleting.set(doc.id);
+    this.http.delete(`/api/documents/${doc.id}`).subscribe({
+      next: () => {
+        this.deleting.set(null);
+        this.documents.update((documents) => documents.filter((d) => d.id !== doc.id));
+        this.message.set({ ok: true, text: `Deleted ${doc.name}` });
+      },
+      error: (err: HttpErrorResponse) => {
+        this.deleting.set(null);
+        // 404: already gone (e.g. deleted in another tab), so drop it from the list too.
+        if (err.status === 404) {
+          this.documents.update((documents) => documents.filter((d) => d.id !== doc.id));
+        }
+        this.message.set({ ok: false, text: `Could not delete ${doc.name}: ${errorText(err)}` });
+      },
+    });
   }
 
   private loadDocuments() {

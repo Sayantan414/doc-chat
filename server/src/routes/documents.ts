@@ -4,6 +4,7 @@
 //      202 + { jobId }: the PDF is queued; a worker ingests it in the background.
 //      200 + the earlier document with duplicate: true when the same file
 //      (same bytes, any name) was uploaded before. Nothing is queued then.
+// DELETE /api/documents/:id: delete one document and its chunks. 204, or 404.
 
 import { unlink } from "node:fs/promises";
 import path from "node:path";
@@ -109,4 +110,17 @@ documentsRouter.post("/documents", uploadPdf, async (req, res) => {
   } finally {
     if (!queued) await unlink(filePath);
   }
+});
+
+documentsRouter.delete("/documents/:id", async (req, res) => {
+  // Only a plain positive whole number: "12abc" or "-1" is a 400, not a lookup.
+  if (!/^\d+$/.test(req.params.id)) throw httpError(400, "Document id must be a number");
+  const id = Number(req.params.id);
+
+  // ON DELETE CASCADE (schema.sql) deletes the chunks in the same statement.
+  // Its file hash goes too, so the same PDF can be uploaded again later.
+  // The answer cache needs nothing: its key includes the document set.
+  const { rowCount } = await pool.query("DELETE FROM documents WHERE id = $1", [id]);
+  if (rowCount === 0) throw httpError(404, `No document ${id}`);
+  res.status(204).end(); // 204 No Content: done, nothing to send back
 });

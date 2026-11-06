@@ -17,10 +17,15 @@ import { llm } from "../llm/index.js";
 import { buildRagMessages } from "../retrieval/prompt.js";
 import { searchChunks } from "../retrieval/search.js";
 import { httpError } from "./httpError.js";
+import { rateLimit } from "./rateLimit.js";
 
 export const chatRouter = Router();
 
 const MAX_QUESTION_CHARS = 2000;
+
+// 20 questions per minute per IP. Cache hits count too: the limit is about
+// requests, and checking it first is cheaper than finding out what they are.
+const chatRateLimit = rateLimit("chat", 20, 60);
 
 // One SSE message: "event: <name>", "data: <json>", then an empty line that ends it.
 // data is always JSON: a raw token like "\n\n" would otherwise look like the end of a message.
@@ -43,7 +48,7 @@ function startStream(res: Response) {
   res.write(": connected\n\n");
 }
 
-chatRouter.post("/chat", async (req, res) => {
+chatRouter.post("/chat", chatRateLimit, async (req, res) => {
   // req.body is undefined when the request had no JSON body.
   const question = typeof req.body?.question === "string" ? req.body.question.trim() : "";
   if (!question) throw httpError(400, 'Send a JSON body like {"question": "..."}');

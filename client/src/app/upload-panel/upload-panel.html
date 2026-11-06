@@ -70,11 +70,23 @@
   <ul class="documents">
     @for (doc of documents(); track doc.id) {
       <li>
-        <span class="name">{{ doc.name }}</span>
-        <small>
-          {{ doc.chunks }} {{ doc.chunks === 1 ? 'chunk' : 'chunks' }} ·
-          {{ doc.uploadedAt | date: 'd MMM y, HH:mm' }}
-        </small>
+        <div class="info">
+          <span class="name">{{ doc.name }}</span>
+          <small>
+            {{ doc.chunks }} {{ doc.chunks === 1 ? 'chunk' : 'chunks' }} ·
+            {{ doc.uploadedAt | date: 'd MMM y, HH:mm' }}
+          </small>
+        </div>
+        <button
+          type="button"
+          class="delete"
+          [disabled]="deleting() === doc.id"
+          [attr.aria-label]="'Delete ' + doc.name"
+          title="Delete"
+          (click)="deleteDocument(doc)"
+        >
+          🗑
+        </button>
       </li>
     } @empty {
       <li class="empty">No documents yet.</li>
