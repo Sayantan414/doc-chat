@@ -23,11 +23,13 @@ export interface QueuedUpload {
 export interface JobInfo {
   id: string;
   name: string;
-  // waiting | active | completed | failed (BullMQ has a few more, e.g. delayed)
+  // waiting | active | delayed (failed, will retry) | completed | failed
   state: string;
   progress: { done: number; total: number } | null; // chunks embedded so far
   result: { documentId: number; chunkCount: number; duplicate: boolean } | null;
-  error: string | null;
+  error: string | null; // why the last attempt failed
+  attemptsMade: number; // failed attempts so far
+  attempts: number; // the most it will try
 }
 
 // One chunk the model was given (the "sources" event of POST /api/chat)

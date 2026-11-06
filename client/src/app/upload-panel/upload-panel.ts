@@ -96,7 +96,7 @@ export class UploadPanel {
             this.upload.set(null);
             this.jobs.update((jobs) => [
               ...jobs,
-              { id: jobId, name, state: 'waiting', progress: null, result: null, error: null },
+              { id: jobId, name, state: 'waiting', progress: null, result: null, error: null, attemptsMade: 0, attempts: 1 },
             ]);
             this.schedulePoll();
           } else if (event.type === HttpEventType.Response && event.body) {

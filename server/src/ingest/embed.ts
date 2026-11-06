@@ -37,6 +37,12 @@ export async function findByHash(hash: string): Promise<IngestResult | undefined
   return { documentId: rows[0].id, chunkCount: rows[0].chunks, duplicate: true };
 }
 
+// A problem with the file itself (not a PDF, or no text in it). Trying again
+// cannot help, unlike a network error, so the worker does not retry these.
+export class BadPdfError extends Error {
+  override name = "BadPdfError";
+}
+
 // Called after each chunk is embedded, e.g. so the worker can report "12 of 36".
 export type OnProgress = (done: number, total: number) => void | Promise<void>;
 
@@ -55,9 +61,19 @@ export async function ingestPdf(
     return earlier;
   }
 
-  const pages = await loadPdf(filePath);
+  let pages;
+  try {
+    pages = await loadPdf(filePath);
+  } catch (err) {
+    throw new BadPdfError(`Could not read the PDF: ${(err as Error).message}`);
+  }
   const chunks = chunkPages(pages);
   console.log(`Loaded ${pages.length} pages, made ${chunks.length} chunks`);
+  // Without this, a scanned PDF (pages are images) was saved as a document
+  // with 0 chunks: listed, but nothing in it can ever be found.
+  if (chunks.length === 0) {
+    throw new BadPdfError("No text found in this PDF (is it a scanned image?)");
+  }
 
   // Embed everything BEFORE touching the database. Embedding is the slow part;
   // if it fails halfway, nothing has been written yet.

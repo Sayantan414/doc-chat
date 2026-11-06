@@ -34,7 +34,18 @@
           <progress></progress>
           <small>Waiting in queue…</small>
         }
+        @case ('delayed') {
+          <!-- the last attempt failed; BullMQ tries again after a pause -->
+          <progress></progress>
+          <small class="bad">
+            Attempt {{ job.attemptsMade }} of {{ job.attempts }} failed: {{ job.error }}.
+            Trying again soon…
+          </small>
+        }
         @case ('active') {
+          @if (job.attemptsMade > 0) {
+            <small>Attempt {{ job.attemptsMade + 1 }} of {{ job.attempts }}</small>
+          }
           @if (job.progress; as p) {
             <progress max="100" [value]="percent(job)"></progress>
             <small>Embedding {{ p.done }} / {{ p.total }} ({{ percent(job) }}%)</small>

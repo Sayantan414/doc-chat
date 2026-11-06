@@ -41,6 +41,11 @@ export const ingestQueue = new Queue<IngestJobData>("ingest", {
   // enough for the browser to read the result (GET /api/jobs/:id), then let
   // BullMQ delete them. Ages are in seconds.
   defaultJobOptions: {
+    // A failed job is tried up to 3 times in all. Between tries it waits
+    // (state "delayed"), longer each time: 5 s, then 10 s. A short outage
+    // (Ollama restarting, loading a model) is over by then.
+    attempts: 3,
+    backoff: { type: "exponential", delay: 5000 },
     removeOnComplete: { age: 24 * 3600 },
     removeOnFail: { age: 7 * 24 * 3600 }, // failures kept longer, to look into
   },

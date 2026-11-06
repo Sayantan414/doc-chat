@@ -6,17 +6,25 @@
 // and a restart of the API (tsx watch) does not stop an ingest halfway.
 
 import { unlink } from "node:fs/promises";
-import { Worker, type Job } from "bullmq";
+import { UnrecoverableError, Worker, type Job } from "bullmq";
 import { pool } from "./db/pool.js";
-import { ingestPdf, type IngestResult } from "./ingest/embed.js";
+import { BadPdfError, ingestPdf, type IngestResult } from "./ingest/embed.js";
 import { redisConnection, type IngestJobData, type IngestProgress } from "./queue/ingestQueue.js";
 
 async function processJob(job: Job<IngestJobData>): Promise<IngestResult> {
   const { filePath, name } = job.data;
-  console.log(`Job ${job.id}: ingesting ${name}`);
-  const result = await ingestPdf(filePath, name, (done, total) =>
-    job.updateProgress({ done, total } satisfies IngestProgress),
-  );
+  console.log(`Job ${job.id}: ingesting ${name} (attempt ${job.attemptsMade + 1} of ${job.opts.attempts ?? 1})`);
+  let result: IngestResult;
+  try {
+    result = await ingestPdf(filePath, name, (done, total) =>
+      job.updateProgress({ done, total } satisfies IngestProgress),
+    );
+  } catch (err) {
+    // UnrecoverableError tells BullMQ: fail now, skip the remaining attempts.
+    // Any other error (Ollama down, a timeout) is retried after the backoff.
+    if (err instanceof BadPdfError) throw new UnrecoverableError(err.message);
+    throw err;
+  }
   // The chunks are in Postgres now, so the uploaded file is no longer needed.
   await unlink(filePath);
   // BullMQ stores the returned value in Redis as the job's result.
@@ -39,12 +47,16 @@ worker.on("completed", (job, result) => {
 
 worker.on("failed", async (job, err) => {
   if (!job) return;
-  console.error(`Job ${job.id}: ${job.data.name} failed: ${err.message}`);
-  // Keep the file while BullMQ may still retry the job (retries come in Task 6);
-  // delete it once the last attempt has failed.
-  const attempts = job.opts.attempts ?? 1;
-  if (job.attemptsMade >= attempts) {
+  // "delayed" = BullMQ will try again after the backoff; "failed" = it gave up
+  // (last attempt, or an UnrecoverableError, which does not use up the attempts).
+  const state = await job.getState();
+  const attempt = `attempt ${job.attemptsMade} of ${job.opts.attempts ?? 1}`;
+  if (state === "failed") {
+    console.error(`Job ${job.id}: ${job.data.name} failed for good (${attempt}): ${err.message}`);
+    // Only now is the file no longer needed; a retry would read it again.
     await unlink(job.data.filePath).catch(() => {}); // may already be gone
+  } else {
+    console.error(`Job ${job.id}: ${job.data.name} failed (${attempt}), will retry: ${err.message}`);
   }
 });
 
