@@ -5,10 +5,14 @@
 // Events, in order:
 //   token   (many) one piece of the answer, as a JSON string
 //   sources (once) the chunks the model was given
-//   done    (once) timings in ms
+//   done    (once) timings in ms; cached: true when the answer came from Redis
 //   error   (instead of sources/done) if the model fails mid-answer
+//
+// A repeated question is answered from the answer cache (cache/answerCache.ts):
+// the whole answer arrives as one token event, then sources and done as usual.
 
 import { Router, type Response } from "express";
+import { answerCacheKey, getCachedAnswer, setCachedAnswer } from "../cache/answerCache.js";
 import { llm } from "../llm/index.js";
 import { buildRagMessages } from "../retrieval/prompt.js";
 import { searchChunks } from "../retrieval/search.js";
@@ -24,23 +28,8 @@ function sendEvent(res: Response, event: string, data: unknown) {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
-chatRouter.post("/chat", async (req, res) => {
-  // req.body is undefined when the request had no JSON body.
-  const question = typeof req.body?.question === "string" ? req.body.question.trim() : "";
-  if (!question) throw httpError(400, 'Send a JSON body like {"question": "..."}');
-  if (question.length > MAX_QUESTION_CHARS) {
-    throw httpError(400, `Question is too long (max ${MAX_QUESTION_CHARS} characters)`);
-  }
-
-  // Retrieval runs BEFORE the stream starts, so a failure here (e.g. DB down)
-  // is still a normal JSON error with a proper status code.
-  const start = performance.now();
-  const chunks = await searchChunks(question, 5);
-  const retrievalMs = Math.round(performance.now() - start);
-  const messages = buildRagMessages(question, chunks);
-
-  // From here on the status (200) and headers are sent and can't change.
-  // Errors after this point must travel as an "error" event instead.
+// Sends the SSE headers and a first comment line.
+function startStream(res: Response) {
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache", // never store a half-finished stream
@@ -52,6 +41,41 @@ chatRouter.post("/chat", async (req, res) => {
   // which waits for body bytes (82 s). An SSE comment (a line starting with ":") is
   // real body data that every SSE parser ignores, so headers and all go out now.
   res.write(": connected\n\n");
+}
+
+chatRouter.post("/chat", async (req, res) => {
+  // req.body is undefined when the request had no JSON body.
+  const question = typeof req.body?.question === "string" ? req.body.question.trim() : "";
+  if (!question) throw httpError(400, 'Send a JSON body like {"question": "..."}');
+  if (question.length > MAX_QUESTION_CHARS) {
+    throw httpError(400, `Question is too long (max ${MAX_QUESTION_CHARS} characters)`);
+  }
+
+  const start = performance.now();
+
+  // Cache first: on a hit nothing else is needed (no embedding, search or model).
+  const cacheKey = await answerCacheKey(question);
+  const cached = await getCachedAnswer(cacheKey);
+  if (cached) {
+    startStream(res);
+    const ms = Math.round(performance.now() - start);
+    sendEvent(res, "token", cached.answer);
+    sendEvent(res, "sources", cached.sources);
+    sendEvent(res, "done", { retrievalMs: 0, firstTokenMs: ms, totalMs: ms, tokens: cached.tokens, cached: true });
+    res.end();
+    console.log(`[chat] cache hit in ${ms} ms`);
+    return;
+  }
+
+  // Retrieval runs BEFORE the stream starts, so a failure here (e.g. DB down)
+  // is still a normal JSON error with a proper status code.
+  const chunks = await searchChunks(question, 5);
+  const retrievalMs = Math.round(performance.now() - start);
+  const messages = buildRagMessages(question, chunks);
+
+  // From here on the status (200) and headers are sent and can't change.
+  // Errors after this point must travel as an "error" event instead.
+  startStream(res);
 
   // If the client leaves early, abort the model right away so Ollama stops working
   // for nobody (it handles one request at a time, so the next question would wait).
@@ -66,10 +90,12 @@ chatRouter.post("/chat", async (req, res) => {
 
   let firstTokenMs: number | undefined;
   let tokens = 0;
+  let answer = ""; // the whole answer, for the cache
   try {
     for await (const token of llm.chat(messages, { temperature: 0, signal: abort.signal })) {
       firstTokenMs ??= Math.round(performance.now() - start);
       tokens++;
+      answer += token;
       sendEvent(res, "token", token);
     }
 
@@ -78,6 +104,9 @@ chatRouter.post("/chat", async (req, res) => {
       sendEvent(res, "sources", chunks);
       sendEvent(res, "done", { retrievalMs, firstTokenMs, totalMs, tokens });
       console.log(`[chat] ${tokens} tokens, retrieval ${retrievalMs} ms, first token ${firstTokenMs} ms, total ${totalMs} ms`);
+      // Only a complete answer is cached (not a stopped or failed one).
+      // Not awaited: the client has everything already and should not wait for Redis.
+      void setCachedAnswer(cacheKey, { answer, sources: chunks, tokens });
     }
   } catch (err) {
     if (clientGone) {

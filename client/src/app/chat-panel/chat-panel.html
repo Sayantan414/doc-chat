@@ -32,10 +32,15 @@
         @if (turn.status === 'done') {
           <app-citations [answer]="turn.answer" [sources]="turn.sources" />
           @if (turn.timings; as t) {
-            <p class="meta">
-              first words after {{ (t.firstTokenMs ?? 0) / 1000 | number: '1.0-0' }} s · total
-              {{ t.totalMs / 1000 | number: '1.0-0' }} s
-            </p>
+            @if (t.cached) {
+              <!-- same question asked before: answered from the server's cache -->
+              <p class="meta">⚡ from cache · {{ t.totalMs }} ms</p>
+            } @else {
+              <p class="meta">
+                first words after {{ (t.firstTokenMs ?? 0) / 1000 | number: '1.0-0' }} s · total
+                {{ t.totalMs / 1000 | number: '1.0-0' }} s
+              </p>
+            }
           }
         }
       </div>

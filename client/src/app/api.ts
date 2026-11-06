@@ -46,6 +46,7 @@ export interface ChatTimings {
   firstTokenMs?: number;
   totalMs: number;
   tokens: number;
+  cached?: boolean; // true: answered from the server's answer cache
 }
 
 export type ChatEvent =

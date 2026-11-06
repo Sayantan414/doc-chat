@@ -6,22 +6,16 @@ import { Router } from "express";
 import { pool } from "../db/pool.js";
 import { redis } from "../db/redis.js";
 import { llm } from "../llm/index.js";
+import { withTimeout } from "../withTimeout.js";
 
 export const healthRouter = Router();
-
-// A check that hangs would make /health hang too, so give up after `ms`.
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`timed out after ${ms} ms`)), ms);
-    promise.then(resolve, reject).finally(() => clearTimeout(timer));
-  });
-}
 
 // Runs one check and measures how long it took. Never throws:
 // a failure becomes { ok: false, error } so the other check still reports.
 async function timed<T>(check: () => Promise<T>) {
   const start = performance.now();
   try {
+    // A check that hangs would make /health hang too, so give up after 2 s.
     const result = await withTimeout(check(), 2000);
     return { ok: true, ms: Math.round(performance.now() - start), result };
   } catch (err) {
