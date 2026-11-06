@@ -9,13 +9,7 @@ import { unlink } from "node:fs/promises";
 import { Worker, type Job } from "bullmq";
 import { pool } from "./db/pool.js";
 import { ingestPdf, type IngestResult } from "./ingest/embed.js";
-import { redisConnection, type IngestJobData } from "./queue/ingestQueue.js";
-
-// What job.progress holds while a job runs; GET /api/jobs/:id will show it (Task 5).
-export interface IngestProgress {
-  done: number;
-  total: number;
-}
+import { redisConnection, type IngestJobData, type IngestProgress } from "./queue/ingestQueue.js";
 
 async function processJob(job: Job<IngestJobData>): Promise<IngestResult> {
   const { filePath, name } = job.data;

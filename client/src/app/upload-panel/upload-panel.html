@@ -25,6 +25,33 @@
     </div>
   }
 
+  <!-- Jobs on the server that are not finished yet (polled every second) -->
+  @for (job of jobs(); track job.id) {
+    <div class="progress-box job">
+      <div class="file-name">{{ job.name }}</div>
+      @switch (job.state) {
+        @case ('waiting') {
+          <progress></progress>
+          <small>Waiting in queue…</small>
+        }
+        @case ('active') {
+          @if (job.progress; as p) {
+            <progress max="100" [value]="percent(job)"></progress>
+            <small>Embedding {{ p.done }} / {{ p.total }} ({{ percent(job) }}%)</small>
+          } @else {
+            <!-- before the first chunk: reading and chunking the PDF -->
+            <progress></progress>
+            <small>Reading the PDF…</small>
+          }
+        }
+        @default {
+          <progress></progress>
+          <small>{{ job.state }}…</small>
+        }
+      }
+    </div>
+  }
+
   @if (message(); as m) {
     <p [class]="m.ok ? 'ok' : 'bad'">{{ m.text }}</p>
   }

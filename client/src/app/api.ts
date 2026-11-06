@@ -19,6 +19,17 @@ export interface QueuedUpload {
   name: string;
 }
 
+// GET /api/jobs/:id and GET /api/jobs (server/src/routes/jobs.ts)
+export interface JobInfo {
+  id: string;
+  name: string;
+  // waiting | active | completed | failed (BullMQ has a few more, e.g. delayed)
+  state: string;
+  progress: { done: number; total: number } | null; // chunks embedded so far
+  result: { documentId: number; chunkCount: number; duplicate: boolean } | null;
+  error: string | null;
+}
+
 // One chunk the model was given (the "sources" event of POST /api/chat)
 export interface Source {
   documentName: string;

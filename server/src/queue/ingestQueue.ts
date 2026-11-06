@@ -12,6 +12,12 @@ export interface IngestJobData {
   name: string; // the original file name, shown in the documents list
 }
 
+// What job.progress holds while a job runs (set by the worker, read by GET /api/jobs/:id).
+export interface IngestProgress {
+  done: number; // chunks embedded so far
+  total: number;
+}
+
 // BullMQ makes its own Redis connections (not the shared one in db/redis.ts),
 // because a worker waits on Redis with blocking commands and needs different
 // settings. It takes host/port options, so split REDIS_URL into them.
@@ -30,5 +36,12 @@ export const ingestQueue = new Queue<IngestJobData>("ingest", {
     // half-open connection Docker Desktop leaves when Redis stops (see Task 1).
     enableOfflineQueue: false,
     commandTimeout: 5000,
+  },
+  // BullMQ keeps finished jobs in Redis forever by default. Keep them long
+  // enough for the browser to read the result (GET /api/jobs/:id), then let
+  // BullMQ delete them. Ages are in seconds.
+  defaultJobOptions: {
+    removeOnComplete: { age: 24 * 3600 },
+    removeOnFail: { age: 7 * 24 * 3600 }, // failures kept longer, to look into
   },
 });
