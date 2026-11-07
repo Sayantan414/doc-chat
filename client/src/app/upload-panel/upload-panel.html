@@ -1,95 +1,150 @@
-<section class="upload-panel">
-  <h2>Documents</h2>
-
-  <label class="upload-button" [class.disabled]="upload()">
-    <input
-      type="file"
-      accept="application/pdf"
-      [disabled]="upload() !== null"
-      (change)="onFileSelected($event)"
-    />
-    Upload a PDF
-  </label>
-
-  @if (upload(); as u) {
-    <div class="progress-box">
-      <div class="file-name">{{ u.fileName }}</div>
-      @if (u.phase === 'uploading') {
-        <progress max="100" [value]="u.percent"></progress>
-        <small>Uploading… {{ u.percent }}%</small>
-      } @else {
-        <!-- no value = an indeterminate (moving) bar: we can't know how far it is -->
-        <progress></progress>
-        <small>Checking and queueing…</small>
+<section class="flex min-h-0 flex-1 flex-col">
+  <div class="shrink-0 space-y-3 p-4">
+    <div class="flex items-baseline justify-between">
+      <h2 class="text-sm font-semibold">Documents</h2>
+      @if (documents().length) {
+        <span class="text-xs tabular-nums text-muted">{{ documents().length }}</span>
       }
     </div>
-  }
 
-  <!-- Jobs on the server that are not finished yet (polled every second) -->
-  @for (job of jobs(); track job.id) {
-    <div class="progress-box job">
-      <div class="file-name">{{ job.name }}</div>
-      @switch (job.state) {
-        @case ('waiting') {
-          <progress></progress>
-          <small>Waiting in queue…</small>
+    <!-- Drop zone. The real <input type="file"> is hidden inside the label. -->
+    <label
+      class="group flex flex-col items-center gap-1.5 rounded-xl border-2 border-dashed px-4 py-5 text-center transition-colors"
+      [class]="dropZoneClass()"
+      (dragover)="onDragOver($event)"
+      (dragleave)="dragging.set(false)"
+      (drop)="onDrop($event)"
+    >
+      <input
+        type="file"
+        accept="application/pdf"
+        class="sr-only"
+        [disabled]="upload() !== null"
+        (change)="onFileSelected($event)"
+      />
+      <span
+        class="flex size-10 items-center justify-center rounded-full bg-accent-soft text-accent transition-transform group-hover:-translate-y-0.5"
+      >
+        <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m17 8-5-5-5 5M12 3v12" /></svg>
+      </span>
+      <span class="text-sm font-medium">
+        @if (dragging()) {
+          Drop to upload
+        } @else {
+          <span class="text-accent">Upload a PDF</span> or drag it here
         }
-        @case ('delayed') {
-          <!-- the last attempt failed; BullMQ tries again after a pause -->
-          <progress></progress>
-          <small class="bad">
-            Attempt {{ job.attemptsMade }} of {{ job.attempts }} failed: {{ job.error }}.
-            Trying again soon…
-          </small>
+      </span>
+      <span class="text-xs text-muted">PDF files only</span>
+    </label>
+
+    @if (upload(); as u) {
+      <div class="card space-y-2 p-3">
+        <div class="truncate text-sm font-medium" [title]="u.fileName">{{ u.fileName }}</div>
+        @if (u.phase === 'uploading') {
+          <div class="bar"><span [style.width.%]="u.percent"></span></div>
+          <div class="text-xs text-muted">Uploading… {{ u.percent }}%</div>
+        } @else {
+          <!-- indeterminate: there is no way to know how far it is -->
+          <div class="bar indeterminate"><span></span></div>
+          <div class="text-xs text-muted">Checking and queueing…</div>
         }
-        @case ('active') {
-          @if (job.attemptsMade > 0) {
-            <small>Attempt {{ job.attemptsMade + 1 }} of {{ job.attempts }}</small>
+      </div>
+    }
+
+    <!-- Jobs on the server that are not finished yet (polled every second) -->
+    @for (job of jobs(); track job.id) {
+      <div class="card space-y-2 p-3">
+        <div class="truncate text-sm font-medium" [title]="job.name">{{ job.name }}</div>
+        @switch (job.state) {
+          @case ('waiting') {
+            <div class="bar indeterminate"><span></span></div>
+            <div class="text-xs text-muted">Waiting in queue…</div>
           }
-          @if (job.progress; as p) {
-            <progress max="100" [value]="percent(job)"></progress>
-            <small>Embedding {{ p.done }} / {{ p.total }} ({{ percent(job) }}%)</small>
-          } @else {
-            <!-- before the first chunk: reading and chunking the PDF -->
-            <progress></progress>
-            <small>Reading the PDF…</small>
+          @case ('delayed') {
+            <!-- the last attempt failed; BullMQ tries again after a pause -->
+            <div class="bar indeterminate"><span class="bg-warning!"></span></div>
+            <div class="text-xs text-warning">
+              Attempt {{ job.attemptsMade }} of {{ job.attempts }} failed: {{ job.error }}. Trying again
+              soon…
+            </div>
+          }
+          @case ('active') {
+            @if (job.progress; as p) {
+              <div class="bar"><span [style.width.%]="percent(job)"></span></div>
+              <div class="flex justify-between text-xs text-muted">
+                <span>Embedding {{ p.done }} / {{ p.total }}</span>
+                <span class="tabular-nums">{{ percent(job) }}%</span>
+              </div>
+            } @else {
+              <!-- before the first chunk: reading and chunking the PDF -->
+              <div class="bar indeterminate"><span></span></div>
+              <div class="text-xs text-muted">Reading the PDF…</div>
+            }
+            @if (job.attemptsMade > 0) {
+              <div class="text-xs text-muted">Attempt {{ job.attemptsMade + 1 }} of {{ job.attempts }}</div>
+            }
+          }
+          @default {
+            <div class="bar indeterminate"><span></span></div>
+            <div class="text-xs text-muted">{{ job.state }}…</div>
           }
         }
-        @default {
-          <progress></progress>
-          <small>{{ job.state }}…</small>
-        }
-      }
-    </div>
-  }
+      </div>
+    }
 
-  @if (message(); as m) {
-    <p [class]="m.ok ? 'ok' : 'bad'">{{ m.text }}</p>
-  }
+    @if (message(); as m) {
+      <div
+        class="flex items-start gap-2 rounded-lg px-3 py-2 text-sm"
+        [class]="m.ok ? 'bg-success-soft text-success' : 'bg-danger-soft text-danger'"
+        role="status"
+      >
+        <p class="min-w-0 flex-1 break-words">{{ m.text }}</p>
+        <button
+          type="button"
+          class="-mr-1 shrink-0 rounded p-0.5 opacity-70 hover:opacity-100"
+          aria-label="Dismiss"
+          (click)="message.set(null)"
+        >
+          <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+        </button>
+      </div>
+    }
+  </div>
 
-  <ul class="documents">
+  <ul class="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-4">
     @for (doc of documents(); track doc.id) {
-      <li>
-        <div class="info">
-          <span class="name">{{ doc.name }}</span>
-          <small>
+      <li class="group flex items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-subtle">
+        <span
+          class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-danger-soft text-[10px] font-bold tracking-wide text-danger"
+          aria-hidden="true"
+          >PDF</span
+        >
+        <div class="min-w-0 flex-1">
+          <div class="truncate text-sm font-medium" [title]="doc.name">{{ doc.name }}</div>
+          <div class="text-xs text-muted" [title]="doc.uploadedAt | date: 'd MMM y, HH:mm'">
             {{ doc.chunks }} {{ doc.chunks === 1 ? 'chunk' : 'chunks' }} ·
-            {{ doc.uploadedAt | date: 'd MMM y, HH:mm' }}
-          </small>
+            {{ doc.uploadedAt | date: 'd MMM y' }}
+          </div>
         </div>
         <button
           type="button"
-          class="delete"
+          class="icon-btn size-8 shrink-0 hover:bg-danger-soft! hover:text-danger! md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
           [disabled]="deleting() === doc.id"
           [attr.aria-label]="'Delete ' + doc.name"
           title="Delete"
           (click)="deleteDocument(doc)"
         >
-          🗑
+          @if (deleting() === doc.id) {
+            <svg class="size-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.22-8.56" /></svg>
+          } @else {
+            <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M10 11v6M14 11v6" /></svg>
+          }
         </button>
       </li>
     } @empty {
-      <li class="empty">No documents yet.</li>
+      <li class="px-4 py-8 text-center text-sm text-muted">
+        No documents yet.<br />Upload a PDF to start asking questions.
+      </li>
     }
   </ul>
 </section>

@@ -37,6 +37,8 @@ export class UploadPanel {
   protected readonly deleting = signal<number | null>(null);
   // Jobs the server has not finished yet (waiting or active), oldest first.
   protected readonly jobs = signal<JobInfo[]>([]);
+  // A file is being dragged over the drop zone.
+  protected readonly dragging = signal(false);
 
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
   private destroyed = false;
@@ -70,7 +72,33 @@ export class UploadPanel {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
     input.value = ''; // so choosing the same file again still fires "change"
-    if (!file) return;
+    if (file) this.uploadFile(file);
+  }
+
+  protected dropZoneClass() {
+    if (this.upload()) return 'cursor-not-allowed border-line opacity-60';
+    if (this.dragging()) return 'cursor-copy border-accent bg-accent-soft';
+    return 'cursor-pointer border-line hover:border-accent hover:bg-accent-soft/50';
+  }
+
+  protected onDragOver(event: DragEvent) {
+    event.preventDefault(); // allows dropping here
+    if (!this.upload()) this.dragging.set(true);
+  }
+
+  protected onDrop(event: DragEvent) {
+    event.preventDefault(); // stops the browser from opening the PDF itself
+    this.dragging.set(false);
+    const file = event.dataTransfer?.files[0];
+    if (!file || this.upload()) return;
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+      this.message.set({ ok: false, text: `${file.name} is not a PDF` });
+      return;
+    }
+    this.uploadFile(file);
+  }
+
+  private uploadFile(file: File) {
 
     // multipart/form-data with the PDF in the field "file" (what multer expects)
     const form = new FormData();

@@ -59,6 +59,19 @@ export class Citations {
     return citationKey(c.page, c.documentName);
   }
 
+  // Blue for a backed citation, amber for one no source chunk supports.
+  protected chipClass(c: Citation) {
+    const active = this.selectedKey() === this.key(c);
+    if (!c.matches.length) {
+      return active
+        ? 'border-warning bg-warning text-canvas'
+        : 'border-warning/50 bg-warning-soft text-warning hover:border-warning';
+    }
+    return active
+      ? 'border-accent bg-accent text-on-accent'
+      : 'border-accent/30 bg-accent-soft text-accent hover:border-accent';
+  }
+
   protected toggle(c: Citation) {
     const key = this.key(c);
     this.selectedKey.update((current) => (current === key ? null : key));

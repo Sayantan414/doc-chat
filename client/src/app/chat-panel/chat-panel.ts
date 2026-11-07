@@ -37,6 +37,19 @@ export class ChatPanel {
   private timer?: ReturnType<typeof setInterval>;
 
   private readonly messages = viewChild<ElementRef<HTMLElement>>('messages');
+  private readonly input = viewChild<ElementRef<HTMLTextAreaElement>>('input');
+
+  // Index of the answer whose Copy button was just clicked (shows "Copied").
+  protected readonly copied = signal<number | null>(null);
+  private copiedTimer?: ReturnType<typeof setTimeout>;
+
+  // Starting points for the empty chat
+  protected readonly suggestions = [
+    'Summarize the main points of my documents',
+    'What are the key definitions?',
+    'List the most important conclusions',
+    'What problem does the document solve?',
+  ];
 
   constructor() {
     // Keep the newest text in view: runs whenever turns() changes (every token).
@@ -49,6 +62,41 @@ export class ChatPanel {
 
   protected secondsSince(start: number) {
     return Math.max(0, Math.round((this.now() - start) / 1000));
+  }
+
+  protected onInput(event: Event) {
+    const el = event.target as HTMLTextAreaElement;
+    this.question.set(el.value);
+    this.autoGrow();
+  }
+
+  // The question box grows with its text, up to max-h-48, then scrolls.
+  private autoGrow() {
+    const el = this.input()?.nativeElement;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }
+
+  protected useSuggestion(text: string) {
+    this.question.set(text);
+    const el = this.input()?.nativeElement;
+    if (el) {
+      el.value = text;
+      el.focus();
+      this.autoGrow();
+    }
+  }
+
+  protected async copy(text: string, index: number) {
+    try {
+      await navigator.clipboard.writeText(text);
+      this.copied.set(index);
+      clearTimeout(this.copiedTimer);
+      this.copiedTimer = setTimeout(() => this.copied.set(null), 1500);
+    } catch {
+      // clipboard blocked (e.g. not a secure context): nothing to show
+    }
   }
 
   protected onKeydown(event: KeyboardEvent) {
@@ -64,6 +112,11 @@ export class ChatPanel {
     if (!question || this.busy()) return;
 
     this.question.set('');
+    const el = this.input()?.nativeElement;
+    if (el) {
+      el.value = '';
+      this.autoGrow();
+    }
     this.turns.update((turns) => [
       ...turns,
       { question, answer: '', status: 'sending', sources: [], startedAt: Date.now() },
