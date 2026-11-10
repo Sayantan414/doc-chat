@@ -38,3 +38,12 @@ ALTER TABLE chunks ADD COLUMN IF NOT EXISTS tsv tsvector
 -- GIN = an inverted index: word -> the chunks that contain it, so a keyword
 -- search doesn't have to read every chunk.
 CREATE INDEX IF NOT EXISTS chunks_tsv_idx ON chunks USING GIN (tsv);
+
+-- Vector search index. HNSW = a graph of nearest neighbours; a search walks it
+-- instead of comparing the question with every chunk. Approximate: it can miss
+-- a true neighbour now and then (hnsw.ef_search trades speed for recall).
+-- HNSW, not IVFFlat: it needs no training data, so it stays good as uploads
+-- add chunks. vector_cosine_ops must match the <=> (cosine) operator we query
+-- with, or Postgres silently skips the index.
+CREATE INDEX IF NOT EXISTS chunks_embedding_hnsw_idx ON chunks
+  USING hnsw (embedding vector_cosine_ops);
