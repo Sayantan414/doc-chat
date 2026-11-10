@@ -7,6 +7,7 @@
 //   - the document set (any upload or delete changes it)
 //   - the chat model (Groq's answer is not Ollama's)
 //   - the system prompt (editing the prompt changes the answers)
+//   - the retrieval version (another search finds other chunks)
 //
 // The cache is only a speed-up: if Redis is down or hangs, chat must still
 // work. So every Redis call has a short timeout and errors only get logged.
@@ -16,7 +17,7 @@ import { config } from "../config.js";
 import { pool } from "../db/pool.js";
 import { redis } from "../db/redis.js";
 import { SYSTEM_PROMPT } from "../retrieval/prompt.js";
-import type { SearchResult } from "../retrieval/search.js";
+import { RETRIEVAL_VERSION, type SearchResult } from "../retrieval/search.js";
 import { withTimeout } from "../withTimeout.js";
 
 const TTL_SECONDS = 3600;
@@ -47,7 +48,13 @@ async function documentSet(): Promise<string> {
 }
 
 export async function answerCacheKey(question: string): Promise<string> {
-  const parts = { q: normalize(question), docs: await documentSet(), model, prompt: SYSTEM_PROMPT };
+  const parts = {
+    q: normalize(question),
+    docs: await documentSet(),
+    model,
+    prompt: SYSTEM_PROMPT,
+    retrieval: RETRIEVAL_VERSION,
+  };
   return "answer:" + createHash("sha256").update(JSON.stringify(parts)).digest("hex");
 }
 

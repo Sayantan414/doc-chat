@@ -14,11 +14,14 @@ export interface SearchResult {
   distance: number; // cosine distance: 0 = same meaning, bigger = less related
 }
 
-// Search = two separate steps (kept apart so each one can be timed on its own):
-//   1. embedQuery:     question -> vector (runs the embedding model in Ollama)
-//   2. searchByVector: vector -> nearest chunks (runs the SQL query in Postgres)
+// The search the chat uses. Two separate steps (kept apart so each one can be timed):
+//   1. embedQuery:   question -> vector (runs the embedding model in Ollama)
+//   2. searchHybrid: vector + keyword search, merged with RRF (one SQL query)
+// If you change how this searches, bump RETRIEVAL_VERSION so cached answers
+// built from the old search aren't served.
+export const RETRIEVAL_VERSION = "hybrid-rrf-v1";
 export async function searchChunks(question: string, topK = 5): Promise<SearchResult[]> {
-  return searchByVector(await embedQuery(question), topK);
+  return searchHybrid(question, await embedQuery(question), topK);
 }
 
 export async function embedQuery(question: string): Promise<number[]> {
@@ -54,13 +57,15 @@ export interface KeywordResult extends Omit<SearchResult, "distance"> {
 // (no chunk has admin AND role AND check). ts_rank puts chunks with more of
 // the words first. quote_literal keeps words with ' or & from breaking the
 // query. A question of only stop words ("the is a") gives no words: 0 results.
+// The question as an OR tsquery ('admin' | 'check' | 'role'); $1 = the question.
+const OR_QUERY_SQL = `
+  SELECT (SELECT string_agg(quote_literal(word), ' | ')
+            FROM unnest(tsvector_to_array(to_tsvector('english', $1))) AS word
+         )::tsquery AS query`;
+
 export async function searchByKeyword(question: string, topK = 5): Promise<KeywordResult[]> {
   const { rows } = await pool.query<KeywordResult>(
-    `WITH q AS (
-       SELECT (SELECT string_agg(quote_literal(word), ' | ')
-                 FROM unnest(tsvector_to_array(to_tsvector('english', $1))) AS word
-              )::tsquery AS query
-     )
+    `WITH q AS (${OR_QUERY_SQL})
      SELECT d.name AS "documentName",
             c.page,
             c.content,
@@ -72,6 +77,59 @@ export async function searchByKeyword(question: string, topK = 5): Promise<Keywo
       ORDER BY rank DESC, c.id -- c.id: same order every run when ranks tie
       LIMIT $2`,
     [question, topK],
+  );
+  return rows;
+}
+
+// Each search brings this many candidates to the merge. More than topK, so a
+// chunk ranked 12th by one search and 3rd by the other can still win.
+const CANDIDATES = 20;
+// RRF constant from the original paper (Cormack et al., 2009). A big k makes
+// rank 1 only a little better than rank 5, so agreement between the two
+// searches counts for more than either one's top pick.
+const RRF_K = 60;
+
+// Hybrid search: vector + keyword, merged with Reciprocal Rank Fusion.
+//   score = 1/(k + vector rank) + 1/(k + keyword rank), 0 for a list it isn't in
+// Ranks, not raw scores: cosine distance and ts_rank have different scales
+// and can't be added. One SQL query, so it's one round trip to Postgres.
+// distance is computed for every result (also keyword-only ones), so the
+// result has the same shape as before and the UI chips still work.
+export async function searchHybrid(
+  question: string,
+  queryVector: number[],
+  topK = 5,
+): Promise<SearchResult[]> {
+  const { rows } = await pool.query<SearchResult>(
+    `WITH q AS (${OR_QUERY_SQL}),
+     vec AS (
+       SELECT c.id, ROW_NUMBER() OVER (ORDER BY c.embedding <=> $2) AS r
+         FROM chunks c
+        ORDER BY c.embedding <=> $2
+        LIMIT $4
+     ),
+     kw AS (
+       SELECT c.id, ROW_NUMBER() OVER (ORDER BY ts_rank(c.tsv, q.query) DESC, c.id) AS r
+         FROM chunks c CROSS JOIN q
+        WHERE c.tsv @@ q.query
+        ORDER BY ts_rank(c.tsv, q.query) DESC, c.id
+        LIMIT $4
+     ),
+     fused AS (
+       SELECT COALESCE(vec.id, kw.id) AS id,
+              COALESCE(1.0 / ($5 + vec.r), 0) + COALESCE(1.0 / ($5 + kw.r), 0) AS score
+         FROM vec FULL OUTER JOIN kw ON kw.id = vec.id
+     )
+     SELECT d.name AS "documentName",
+            c.page,
+            c.content,
+            c.embedding <=> $2 AS distance
+       FROM fused f
+       JOIN chunks c ON c.id = f.id
+       JOIN documents d ON d.id = c.document_id
+      ORDER BY f.score DESC, distance -- distance breaks ties between equal scores
+      LIMIT $3`,
+    [question, pgvector.toSql(queryVector), topK, CANDIDATES, RRF_K],
   );
   return rows;
 }

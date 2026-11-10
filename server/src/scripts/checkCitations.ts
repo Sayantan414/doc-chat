@@ -8,7 +8,7 @@ import { readFile } from "node:fs/promises";
 import { pool } from "../db/pool.js";
 import { llm } from "../llm/index.js";
 import { buildRagMessages } from "../retrieval/prompt.js";
-import { searchByKeyword, searchChunks } from "../retrieval/search.js";
+import { embedQuery, searchByKeyword, searchByVector, searchChunks, searchHybrid } from "../retrieval/search.js";
 
 // Answerable: validPages = the pages of `document` that truly contain the answer.
 // Unanswerable: expectUnknown = the answer is not in the document, so "I don't know" is correct.
@@ -24,19 +24,26 @@ interface TestSet {
 
 const args = process.argv.slice(2);
 const retrievalOnly = args.includes("--retrieval-only");
-// --keyword: test keyword search instead of vector search (retrieval-only,
-// because chat itself still uses vector search).
-const keyword = args.includes("--keyword");
+// --search=vector|keyword|hybrid compares one search method on its own
+// (retrieval-only). Without it, the same search as the chat (searchChunks).
+const searchArg = args.find((a) => a.startsWith("--search="))?.slice("--search=".length);
+const searchFns: Record<string, (q: string) => Promise<{ documentName: string; page: number }[]>> = {
+  vector: async (q) => searchByVector(await embedQuery(q), 5),
+  keyword: (q) => searchByKeyword(q, 5),
+  hybrid: async (q) => searchHybrid(q, await embedQuery(q), 5),
+};
 const filePath = args.find((a) => !a.startsWith("--"));
-if (!filePath || (keyword && !retrievalOnly)) {
-  console.error("Usage: npx tsx server/src/scripts/checkCitations.ts <test-set.json> [--retrieval-only [--keyword]]");
+if (!filePath || (searchArg && (!retrievalOnly || !searchFns[searchArg]))) {
+  console.error(
+    "Usage: npx tsx server/src/scripts/checkCitations.ts <test-set.json> [--retrieval-only [--search=vector|keyword|hybrid]]",
+  );
   process.exit(1);
 }
 
 // JSON.parse turns the file's text into a JS object. `as TestSet` tells TypeScript its shape;
 // TypeScript can't check a file at runtime, so the file must follow this shape.
 const testSet = JSON.parse(await readFile(filePath, "utf8")) as TestSet;
-const searchName = retrievalOnly ? (keyword ? ", keyword search" : ", vector search") : "";
+const searchName = retrievalOnly ? `, ${searchArg ?? "chat's"} search` : "";
 console.log(`Test set: ${filePath} (${testSet.questions.length} questions on ${testSet.document}${searchName})\n`);
 
 let answerable = 0;
@@ -56,7 +63,7 @@ for (const testCase of testSet.questions) {
   const start = performance.now();
 
   if (retrievalOnly) {
-    const chunks = keyword ? await searchByKeyword(question, 5) : await searchChunks(question, 5);
+    const chunks = searchArg ? await searchFns[searchArg](question) : await searchChunks(question, 5);
     const ms = Math.round(performance.now() - start);
     const pagesInOrder = chunks.map((c) => (c.documentName === testSet.document ? c.page : null));
     // "Unknown" questions have no right page; just show what came back.
