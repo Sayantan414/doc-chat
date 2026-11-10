@@ -56,20 +56,35 @@ export type ChatEvent =
   | { type: 'done'; timings: ChatTimings }
   | { type: 'error'; message: string };
 
+// A JSON error before the stream started (e.g. 400), with its status code.
+export class ChatRequestError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 // Reads the Server-Sent Events of POST /api/chat and yields them one by one.
 // EventSource can't send a POST body, so we read fetch's ReadableStream ourselves.
-export async function* streamChat(question: string, signal: AbortSignal): AsyncGenerator<ChatEvent> {
+// documentIds: search only these documents; undefined = all (not sent at all).
+export async function* streamChat(
+  question: string,
+  signal: AbortSignal,
+  documentIds?: number[],
+): AsyncGenerator<ChatEvent> {
   const res = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, documentIds }), // JSON drops an undefined field
     signal, // aborting it closes the connection; the server then stops Ollama
   });
 
   // Before the stream starts, errors are normal JSON responses (e.g. 400).
   if (!res.ok || !res.body) {
     const body = await res.json().catch(() => null);
-    throw new Error(body?.error ?? `Request failed (${res.status})`);
+    throw new ChatRequestError(res.status, body?.error ?? `Request failed (${res.status})`);
   }
   yield { type: 'connected' };
 

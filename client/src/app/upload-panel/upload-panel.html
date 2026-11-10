@@ -111,9 +111,32 @@
     }
   </div>
 
+  @if (documents().length > 1) {
+    <div class="flex items-center justify-between px-4 pb-1 text-xs text-muted">
+      <span>Chat searches {{ store.selected().length }} of {{ documents().length }}</span>
+      @if (!store.allSelected()) {
+        <button type="button" class="font-medium text-accent hover:underline" (click)="store.selectAll()">
+          Select all
+        </button>
+      }
+    </div>
+  }
+
   <ul class="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-4">
     @for (doc of documents(); track doc.id) {
-      <li class="group flex items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-subtle">
+      <li
+        class="group flex items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-subtle"
+        [class.opacity-50]="!store.isSelected(doc.id)"
+      >
+        <!-- Checked = the chat searches this document. -->
+        <input
+          type="checkbox"
+          class="size-4 shrink-0 cursor-pointer accent-[var(--color-accent)]"
+          [checked]="store.isSelected(doc.id)"
+          (change)="store.toggle(doc.id)"
+          [attr.aria-label]="'Search ' + doc.name"
+          title="Search this document"
+        />
         <span
           class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-danger-soft text-[10px] font-bold tracking-wide text-danger"
           aria-hidden="true"

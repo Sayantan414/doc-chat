@@ -3,6 +3,7 @@ import { HttpClient, HttpErrorResponse, HttpEventType } from '@angular/common/ht
 import { Component, DestroyRef, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { DocumentInfo, JobInfo, QueuedUpload } from '../api';
+import { DocumentStore } from '../document-store';
 
 // An upload has two phases in the browser:
 //   uploading  = the browser sends the bytes (we get progress events)
@@ -30,7 +31,9 @@ export class UploadPanel {
   // default HttpClient backend (XMLHttpRequest) can.
   private readonly http = inject(HttpClient);
 
-  protected readonly documents = signal<DocumentInfo[]>([]);
+  // The list lives in DocumentStore, so the chat can see it (and the checkboxes).
+  protected readonly store = inject(DocumentStore);
+  protected readonly documents = this.store.documents;
   protected readonly upload = signal<UploadState | null>(null);
   protected readonly message = signal<{ text: string; ok: boolean } | null>(null);
   // The id of the document being deleted right now, to disable its button.
@@ -170,11 +173,9 @@ export class UploadPanel {
   }
 
   private loadDocuments() {
-    this.http.get<DocumentInfo[]>('/api/documents').subscribe({
-      next: (documents) => this.documents.set(documents),
-      error: (err: HttpErrorResponse) =>
-        this.message.set({ ok: false, text: `Could not load documents: ${errorText(err)}` }),
-    });
+    this.store.load().catch((err: HttpErrorResponse) =>
+      this.message.set({ ok: false, text: `Could not load documents: ${errorText(err)}` }),
+    );
   }
 
   // One poll at a time: the next one is scheduled only after the previous one

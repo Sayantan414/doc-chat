@@ -1,7 +1,8 @@
 import { DecimalPipe } from '@angular/common';
-import { Component, ElementRef, computed, effect, signal, viewChild } from '@angular/core';
+import { Component, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { MarkdownComponent } from 'ngx-markdown';
-import { ChatTimings, Source, streamChat } from '../api';
+import { ChatRequestError, ChatTimings, Source, streamChat } from '../api';
+import { DocumentStore } from '../document-store';
 import { Citations } from '../citations/citations';
 
 // One question and its answer.
@@ -25,6 +26,15 @@ interface ChatTurn {
   styleUrl: './chat-panel.css',
 })
 export class ChatPanel {
+  // Which documents to search (the checkboxes in the documents panel).
+  protected readonly store = inject(DocumentStore);
+  protected readonly selectedNames = computed(() =>
+    this.store
+      .selected()
+      .map((d) => d.name)
+      .join(', '),
+  );
+
   protected readonly turns = signal<ChatTurn[]>([]);
   protected readonly question = signal('');
   protected readonly busy = computed(() =>
@@ -109,7 +119,7 @@ export class ChatPanel {
 
   protected async ask() {
     const question = this.question().trim();
-    if (!question || this.busy()) return;
+    if (!question || this.busy() || this.store.noneSelected()) return;
 
     this.question.set('');
     const el = this.input()?.nativeElement;
@@ -125,7 +135,7 @@ export class ChatPanel {
     this.timer = setInterval(() => this.now.set(Date.now()), 1000);
 
     try {
-      for await (const event of streamChat(question, this.abort.signal)) {
+      for await (const event of streamChat(question, this.abort.signal, this.store.documentIds())) {
         // Each update replaces the last turn with a new object, so the signal
         // notices the change and Angular re-renders just that part (no zone.js).
         switch (event.type) {
@@ -153,6 +163,11 @@ export class ChatPanel {
           : { ...t, status: 'error', error: 'The connection closed before the answer finished.' },
       );
     } catch (err) {
+      // A checked document was deleted meanwhile (e.g. in another tab): reload
+      // the list, so it disappears and the next question works.
+      if (err instanceof ChatRequestError && err.status === 400 && err.message.startsWith('Unknown document id')) {
+        this.store.load().catch(() => {}); // the documents panel shows load errors
+      }
       this.updateLast((t) =>
         this.abort?.signal.aborted
           ? { ...t, status: 'stopped' }

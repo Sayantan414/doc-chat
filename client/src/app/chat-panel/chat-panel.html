@@ -124,6 +124,16 @@
   <!-- Question box -->
   <div class="shrink-0 bg-gradient-to-t from-canvas via-canvas to-transparent px-4 pb-4 pt-2 sm:px-6">
     <form class="mx-auto max-w-3xl" (submit)="$event.preventDefault(); ask()">
+      <!-- Only shown when the chat does NOT search everything. -->
+      @if (store.noneSelected()) {
+        <p class="mb-2 text-center text-xs font-medium text-danger" role="status">
+          Select at least one document to ask a question.
+        </p>
+      } @else if (!store.allSelected()) {
+        <p class="mb-2 truncate text-center text-xs text-muted" role="status" [title]="selectedNames()">
+          Searching {{ store.selected().length }} of {{ store.documents().length }} documents: {{ selectedNames() }}
+        </p>
+      }
       <div
         class="card flex items-end gap-2 p-2 shadow-lg shadow-black/5 transition-colors focus-within:border-accent dark:shadow-black/20"
       >
@@ -153,7 +163,7 @@
             class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent text-on-accent transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-subtle disabled:text-muted"
             aria-label="Ask"
             title="Ask"
-            [disabled]="!question().trim()"
+            [disabled]="!question().trim() || store.noneSelected()"
           >
             <svg class="size-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
           </button>
