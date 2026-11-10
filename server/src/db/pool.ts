@@ -5,17 +5,16 @@
 import pg from "pg";
 import { config } from "../config.js";
 
-export const pool = new pg.Pool({ connectionString: config.databaseUrl });
-
-// Every new connection: let a filtered HNSW search keep walking the graph until
-// enough rows pass the WHERE (pgvector 0.8+). Without it, searching one small
-// document returned 2 of its 7 chunks. relaxed_order is faster than
-// strict_order; search.ts re-sorts the results itself. A client runs its
-// queries in order, so this SET is done before the first real query.
-pool.on("connect", (client) => {
-  client.query("SET hnsw.iterative_scan = relaxed_order").catch((err) => {
-    console.error("Could not enable hnsw.iterative_scan:", err.message);
-  });
+// options: settings Postgres applies while the connection starts, before any
+// query. hnsw.iterative_scan lets a filtered HNSW search keep walking the graph
+// until enough rows pass the WHERE (pgvector 0.8+). Without it, searching one
+// small document returned 2 of its 7 chunks. relaxed_order is faster than
+// strict_order; search.ts re-sorts the results itself.
+// (Not a SET in pool.on("connect"): that ran next to the first real query,
+// which pg 8 warns about and pg 9 will refuse.)
+export const pool = new pg.Pool({
+  connectionString: config.databaseUrl,
+  options: "-c hnsw.iterative_scan=relaxed_order",
 });
 
 // If Postgres drops a connection while it sits idle in the pool (e.g. the
