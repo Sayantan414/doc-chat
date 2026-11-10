@@ -1,6 +1,8 @@
 // Measures the RAG pipeline on a test set: retrieval, citation format, page accuracy and "I don't know".
 // The questions live in a JSON file per document (see eval/), so any PDF can be tested without code changes.
 // Run with: npx tsx server/src/scripts/checkCitations.ts eval/bitcoin.json
+// Add --retrieval-only to skip the model: only the search is checked, so a run
+// takes seconds and uses no Groq quota (handy when changing the search itself).
 
 import { readFile } from "node:fs/promises";
 import { pool } from "../db/pool.js";
@@ -20,9 +22,11 @@ interface TestSet {
   questions: TestCase[];
 }
 
-const filePath = process.argv[2];
+const args = process.argv.slice(2);
+const retrievalOnly = args.includes("--retrieval-only");
+const filePath = args.find((a) => !a.startsWith("--"));
 if (!filePath) {
-  console.error("Usage: npx tsx server/src/scripts/checkCitations.ts <test-set.json>");
+  console.error("Usage: npx tsx server/src/scripts/checkCitations.ts <test-set.json> [--retrieval-only]");
   process.exit(1);
 }
 
@@ -39,11 +43,37 @@ let unanswerable = 0;
 let unknownOk = 0;
 const runStart = performance.now();
 const mark = (pass: boolean) => (pass ? "✅" : "❌");
+// Retrieval-only extras: where the first right chunk ranked (1 = top), and search time.
+let rankSum = 0; // sum of 1/rank, for MRR (mean reciprocal rank; a miss counts 0)
+let searchMsTotal = 0;
 
 for (const testCase of testSet.questions) {
   const { question } = testCase;
   const start = performance.now();
   const chunks = await searchChunks(question, 5);
+
+  if (retrievalOnly) {
+    const ms = Math.round(performance.now() - start);
+    const pagesInOrder = chunks.map((c) => (c.documentName === testSet.document ? c.page : null));
+    // "Unknown" questions have no right page; just show what came back.
+    if ("expectUnknown" in testCase) {
+      console.log(`·  ${question}\n   retrieved [${pagesInOrder.map((p) => p ?? "other").join(", ")}]  (${ms} ms)\n`);
+      continue;
+    }
+    answerable++;
+    searchMsTotal += ms;
+    const rank = pagesInOrder.findIndex((p) => p !== null && testCase.validPages.includes(p)) + 1; // 0 = miss
+    if (rank > 0) {
+      retrievalOk++;
+      rankSum += 1 / rank;
+    }
+    console.log(`${mark(rank > 0)} ${question}`);
+    console.log(
+      `   retrieved [${pagesInOrder.map((p) => p ?? "other").join(", ")}]  valid [${testCase.validPages.join(", ")}]  ` +
+        `rank ${rank || "-"}  (${ms} ms)\n`,
+    );
+    continue;
+  }
 
   // Collect the whole answer; we don't need to watch it stream here.
   // temperature 0 (same as rag.ts) so every run gives the same answer and scores are comparable.
@@ -102,6 +132,14 @@ for (const testCase of testSet.questions) {
 }
 
 const minutes = ((performance.now() - runStart) / 60000).toFixed(1);
+if (retrievalOnly) {
+  console.log(
+    `Retrieval hit@5: ${retrievalOk}/${answerable}   MRR: ${(rankSum / answerable).toFixed(2)}   ` +
+      `avg search: ${Math.round(searchMsTotal / answerable)} ms`,
+  );
+  await pool.end();
+  process.exit(0);
+}
 console.log(
   `Retrieval hit: ${retrievalOk}/${answerable}   Format: ${formatOk}/${answerable}   ` +
     `Page accuracy: ${pageOk}/${answerable}   I don't know: ${unknownOk}/${unanswerable}   (${minutes} min)`,

@@ -1,0 +1,45 @@
+{
+  "document": "bitcoin.pdf",
+  "questions": [
+    {
+      "question": "Which system by Adam Back is the proof-of-work similar to?",
+      "validPages": [3],
+      "note": "Exact name: 'Adam Back' appears in one chunk only"
+    },
+    {
+      "question": "Whose email address is satoshin@gmx.com?",
+      "validPages": [1],
+      "note": "Exact string: an email address"
+    },
+    {
+      "question": "How is the figure of 4.2MB per year calculated?",
+      "validPages": [4],
+      "note": "Exact number with unit"
+    },
+    {
+      "question": "What is P when q=0.1 and z=50?",
+      "validPages": [8],
+      "note": "Exact values from the probability table (answer 0.0000006)"
+    },
+    {
+      "question": "How many blocks z are needed when q=0.45?",
+      "validPages": [8],
+      "note": "Exact value from the P < 0.001 table (answer 340)"
+    },
+    {
+      "question": "Which papers by Haber and Stornetta are cited?",
+      "validPages": [9],
+      "note": "Exact names: only in the references"
+    },
+    {
+      "question": "What does the paper say about Moore's Law?",
+      "validPages": [4],
+      "note": "Exact name, one chunk"
+    },
+    {
+      "question": "What is RPOW?",
+      "expectUnknown": true,
+      "note": "Exact term that is NOT in the paper"
+    }
+  ]
+}

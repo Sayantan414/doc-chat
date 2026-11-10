@@ -1,0 +1,55 @@
+{
+  "document": "angular-qa.pdf",
+  "questions": [
+    {
+      "question": "What is abc123 used for in the storage example?",
+      "validPages": [10],
+      "note": "Exact string: a sample value in code"
+    },
+    {
+      "question": "What does catchError do in the HTTP interceptor?",
+      "validPages": [26],
+      "note": "Exact identifier, one chunk"
+    },
+    {
+      "question": "When should clearInterval be used?",
+      "validPages": [15],
+      "note": "Exact identifier, one chunk"
+    },
+    {
+      "question": "What does providedIn: 'root' mean?",
+      "validPages": [31],
+      "note": "Exact identifier, one chunk"
+    },
+    {
+      "question": "What does ngZone.runOutsideAngular do?",
+      "validPages": [21],
+      "note": "Exact method name, one chunk"
+    },
+    {
+      "question": "What does @HostBinding('style.backgroundColor') do?",
+      "validPages": [16],
+      "note": "Exact decorator + property string"
+    },
+    {
+      "question": "What is Moment.js?",
+      "validPages": [11],
+      "note": "Exact library name"
+    },
+    {
+      "question": "How is the ADMIN role checked?",
+      "validPages": [25],
+      "note": "Exact all-caps string"
+    },
+    {
+      "question": "What does the custom pipe that uses charAt do?",
+      "validPages": [24],
+      "note": "Exact method name inside code"
+    },
+    {
+      "question": "What is Qwik?",
+      "expectUnknown": true,
+      "note": "Exact term that is NOT in the notes"
+    }
+  ]
+}
