@@ -1,0 +1,4 @@
+# PDFs are binary. reportlab writes mostly-ASCII PDFs, so Git guessed "text"
+# and core.autocrlf added a CR before every LF on checkout (4781 -> 4944 bytes,
+# a different SHA-256). "binary" = no line-ending changes and no text diffs.
+*.pdf binary
