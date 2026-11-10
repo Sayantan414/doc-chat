@@ -20,8 +20,9 @@ export interface SearchResult {
 // If you change how this searches, bump RETRIEVAL_VERSION so cached answers
 // built from the old search aren't served.
 export const RETRIEVAL_VERSION = "hybrid-rrf-v1";
-export async function searchChunks(question: string, topK = 5): Promise<SearchResult[]> {
-  return searchHybrid(question, await embedQuery(question), topK);
+// documentIds: search only these documents; undefined or [] = all documents.
+export async function searchChunks(question: string, topK = 5, documentIds?: number[]): Promise<SearchResult[]> {
+  return searchHybrid(question, await embedQuery(question), topK, documentIds);
 }
 
 export async function embedQuery(question: string): Promise<number[]> {
@@ -95,23 +96,38 @@ const RRF_K = 60;
 // and can't be added. One SQL query, so it's one round trip to Postgres.
 // distance is computed for every result (also keyword-only ones), so the
 // result has the same shape as before and the UI chips still work.
+//
+// documentIds ($6, NULL = all) filters INSIDE both candidate lists, before
+// their LIMIT: filtering after the merge could leave fewer than topK chunks.
+// With the HNSW index the filter runs after the index walk, so a small
+// document could get only a few candidates; hnsw.iterative_scan (db/pool.ts)
+// keeps walking until enough rows pass the filter.
 export async function searchHybrid(
   question: string,
   queryVector: number[],
   topK = 5,
+  documentIds?: number[],
 ): Promise<SearchResult[]> {
   const { rows } = await pool.query<SearchResult>(
     `WITH q AS (${OR_QUERY_SQL}),
-     vec AS (
-       SELECT c.id, ROW_NUMBER() OVER (ORDER BY c.embedding <=> $2) AS r
+     -- MATERIALIZED + re-sort below: iterative_scan = relaxed_order may return
+     -- rows slightly out of distance order, so the ranks must come from a real
+     -- sort, not from the index order (pattern from the pgvector docs).
+     vec_candidates AS MATERIALIZED (
+       SELECT c.id, c.embedding <=> $2 AS distance
          FROM chunks c
+        WHERE $6::int[] IS NULL OR c.document_id = ANY($6)
         ORDER BY c.embedding <=> $2
         LIMIT $4
+     ),
+     vec AS (
+       SELECT id, ROW_NUMBER() OVER (ORDER BY distance, id) AS r FROM vec_candidates
      ),
      kw AS (
        SELECT c.id, ROW_NUMBER() OVER (ORDER BY ts_rank(c.tsv, q.query) DESC, c.id) AS r
          FROM chunks c CROSS JOIN q
         WHERE c.tsv @@ q.query
+          AND ($6::int[] IS NULL OR c.document_id = ANY($6))
         ORDER BY ts_rank(c.tsv, q.query) DESC, c.id
         LIMIT $4
      ),
@@ -129,7 +145,7 @@ export async function searchHybrid(
        JOIN documents d ON d.id = c.document_id
       ORDER BY f.score DESC, distance -- distance breaks ties between equal scores
       LIMIT $3`,
-    [question, pgvector.toSql(queryVector), topK, CANDIDATES, RRF_K],
+    [question, pgvector.toSql(queryVector), topK, CANDIDATES, RRF_K, documentIds?.length ? documentIds : null],
   );
   return rows;
 }

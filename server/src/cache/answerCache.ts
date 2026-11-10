@@ -4,7 +4,8 @@
 // The key must change whenever the answer could, or the cache would serve a
 // wrong answer. It is a SHA-256 of:
 //   - the question, normalized ("What is  Bitcoin?" = "what is bitcoin?")
-//   - the document set (any upload or delete changes it)
+//   - the searched documents: their ids and file hashes (an upload or delete
+//     of one of them changes it; other documents don't matter)
 //   - the chat model (Groq's answer is not Ollama's)
 //   - the system prompt (editing the prompt changes the answers)
 //   - the retrieval version (another search finds other chunks)
@@ -39,18 +40,24 @@ function normalize(question: string): string {
   return question.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
-// Every document's id and file hash, in id order: changes on any upload or delete.
-async function documentSet(): Promise<string> {
+// The searched documents' ids and file hashes, in id order. documentIds
+// undefined or [] = all documents. The caller dedupes and sorts the ids; the
+// SQL (ANY + ORDER BY id) would give one entry per document anyway, so
+// [7, 7] and [7] always get the same key.
+async function documentSet(documentIds?: number[]): Promise<string> {
   const { rows } = await pool.query<{ docs: string | null }>(
-    "SELECT string_agg(id || ':' || COALESCE(content_hash, ''), ',' ORDER BY id) AS docs FROM documents",
+    `SELECT string_agg(id || ':' || COALESCE(content_hash, ''), ',' ORDER BY id) AS docs
+       FROM documents
+      WHERE $1::int[] IS NULL OR id = ANY($1)`,
+    [documentIds?.length ? documentIds : null],
   );
   return rows[0].docs ?? "";
 }
 
-export async function answerCacheKey(question: string): Promise<string> {
+export async function answerCacheKey(question: string, documentIds?: number[]): Promise<string> {
   const parts = {
     q: normalize(question),
-    docs: await documentSet(),
+    docs: await documentSet(documentIds),
     model,
     prompt: SYSTEM_PROMPT,
     retrieval: RETRIEVAL_VERSION,

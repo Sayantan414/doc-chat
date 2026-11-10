@@ -3,6 +3,7 @@
 // Run with: npx tsx server/src/scripts/checkCitations.ts eval/bitcoin.json
 // Add --retrieval-only to skip the model: only the search is checked, so a run
 // takes seconds and uses no Groq quota (handy when changing the search itself).
+// Add --filter to search only the test set's own document (like picking it in the UI).
 
 import { readFile } from "node:fs/promises";
 import { pool } from "../db/pool.js";
@@ -32,10 +33,11 @@ const searchFns: Record<string, (q: string) => Promise<{ documentName: string; p
   keyword: (q) => searchByKeyword(q, 5),
   hybrid: async (q) => searchHybrid(q, await embedQuery(q), 5),
 };
+const filter = args.includes("--filter");
 const filePath = args.find((a) => !a.startsWith("--"));
-if (!filePath || (searchArg && (!retrievalOnly || !searchFns[searchArg]))) {
+if (!filePath || (searchArg && (!retrievalOnly || !searchFns[searchArg] || filter))) {
   console.error(
-    "Usage: npx tsx server/src/scripts/checkCitations.ts <test-set.json> [--retrieval-only [--search=vector|keyword|hybrid]]",
+    "Usage: npx tsx server/src/scripts/checkCitations.ts <test-set.json> [--filter] [--retrieval-only [--search=vector|keyword|hybrid]]",
   );
   process.exit(1);
 }
@@ -43,7 +45,14 @@ if (!filePath || (searchArg && (!retrievalOnly || !searchFns[searchArg]))) {
 // JSON.parse turns the file's text into a JS object. `as TestSet` tells TypeScript its shape;
 // TypeScript can't check a file at runtime, so the file must follow this shape.
 const testSet = JSON.parse(await readFile(filePath, "utf8")) as TestSet;
-const searchName = retrievalOnly ? `, ${searchArg ?? "chat's"} search` : "";
+// --filter: the test set's document id, looked up by its file name.
+let documentIds: number[] | undefined;
+if (filter) {
+  const { rows } = await pool.query<{ id: number }>("SELECT id FROM documents WHERE name = $1", [testSet.document]);
+  if (rows.length !== 1) throw new Error(`Expected one document named ${testSet.document}, found ${rows.length}`);
+  documentIds = [rows[0].id];
+}
+const searchName = (retrievalOnly ? `, ${searchArg ?? "chat's"} search` : "") + (filter ? `, only document ${documentIds}` : "");
 console.log(`Test set: ${filePath} (${testSet.questions.length} questions on ${testSet.document}${searchName})\n`);
 
 let answerable = 0;
@@ -63,7 +72,7 @@ for (const testCase of testSet.questions) {
   const start = performance.now();
 
   if (retrievalOnly) {
-    const chunks = searchArg ? await searchFns[searchArg](question) : await searchChunks(question, 5);
+    const chunks = searchArg ? await searchFns[searchArg](question) : await searchChunks(question, 5, documentIds);
     const ms = Math.round(performance.now() - start);
     const pagesInOrder = chunks.map((c) => (c.documentName === testSet.document ? c.page : null));
     // "Unknown" questions have no right page; just show what came back.
@@ -86,7 +95,7 @@ for (const testCase of testSet.questions) {
     continue;
   }
 
-  const chunks = await searchChunks(question, 5);
+  const chunks = await searchChunks(question, 5, documentIds);
 
   // Collect the whole answer; we don't need to watch it stream here.
   // temperature 0 (same as rag.ts) so every run gives the same answer and scores are comparable.

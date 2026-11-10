@@ -1,5 +1,6 @@
 // POST /api/chat: answer a question from the documents, streamed with Server-Sent Events.
-// Body: { "question": "..." }. Same pipeline as scripts/rag.ts:
+// Body: { "question": "...", "documentIds": [7, 8] }. documentIds is optional:
+// missing or [] = search all documents. Same pipeline as scripts/rag.ts:
 // search -> build prompt -> stream the answer -> send the sources.
 //
 // Events, in order:
@@ -16,12 +17,40 @@ import { answerCacheKey, getCachedAnswer, setCachedAnswer } from "../cache/answe
 import { llm } from "../llm/index.js";
 import { buildRagMessages } from "../retrieval/prompt.js";
 import { searchChunks } from "../retrieval/search.js";
+import { pool } from "../db/pool.js";
 import { httpError } from "./httpError.js";
 import { rateLimit } from "./rateLimit.js";
 
 export const chatRouter = Router();
 
 const MAX_QUESTION_CHARS = 2000;
+const MAX_DOCUMENT_IDS = 100;
+// documents.id is SERIAL (a 4-byte int). A bigger number made Postgres throw
+// "out of range for type integer", which came back as a 500.
+const MAX_ID = 2_147_483_647;
+
+// documentIds from the body -> sorted, without duplicates ([8, 7, 7] -> [7, 8]),
+// so the same selection always gives the same cache key. undefined = all.
+function parseDocumentIds(value: unknown): number[] | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!Array.isArray(value) || !value.every((id) => Number.isInteger(id) && id > 0 && id <= MAX_ID)) {
+    throw httpError(400, "documentIds must be an array of positive integer document ids");
+  }
+  if (value.length > MAX_DOCUMENT_IDS) {
+    throw httpError(400, `Too many documentIds (max ${MAX_DOCUMENT_IDS})`);
+  }
+  const ids = [...new Set(value as number[])].sort((a, b) => a - b);
+  return ids.length ? ids : undefined;
+}
+
+// A stale UI could send ids of deleted documents. Say so, instead of searching
+// nothing and answering "I don't know".
+async function checkDocumentsExist(ids: number[]) {
+  const { rows } = await pool.query<{ id: number }>("SELECT id FROM documents WHERE id = ANY($1)", [ids]);
+  const found = new Set(rows.map((r) => r.id));
+  const unknown = ids.filter((id) => !found.has(id));
+  if (unknown.length) throw httpError(400, `Unknown document id(s): ${unknown.join(", ")}`);
+}
 
 // 20 questions per minute per IP. Cache hits count too: the limit is about
 // requests, and checking it first is cheaper than finding out what they are.
@@ -55,11 +84,13 @@ chatRouter.post("/chat", chatRateLimit, async (req, res) => {
   if (question.length > MAX_QUESTION_CHARS) {
     throw httpError(400, `Question is too long (max ${MAX_QUESTION_CHARS} characters)`);
   }
+  const documentIds = parseDocumentIds(req.body.documentIds);
+  if (documentIds) await checkDocumentsExist(documentIds);
 
   const start = performance.now();
 
   // Cache first: on a hit nothing else is needed (no embedding, search or model).
-  const cacheKey = await answerCacheKey(question);
+  const cacheKey = await answerCacheKey(question, documentIds);
   const cached = await getCachedAnswer(cacheKey);
   if (cached) {
     startStream(res);
@@ -74,7 +105,7 @@ chatRouter.post("/chat", chatRateLimit, async (req, res) => {
 
   // Retrieval runs BEFORE the stream starts, so a failure here (e.g. DB down)
   // is still a normal JSON error with a proper status code.
-  const chunks = await searchChunks(question, 5);
+  const chunks = await searchChunks(question, 5, documentIds);
   const retrievalMs = Math.round(performance.now() - start);
   const messages = buildRagMessages(question, chunks);
 
