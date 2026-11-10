@@ -27,3 +27,14 @@ CREATE TABLE IF NOT EXISTS chunks (
   -- 768 = the number of dimensions nomic-embed-text produces.
   embedding   VECTOR(768) NOT NULL
 );
+
+-- Keyword search (full-text search). tsv = the chunk's words, lowercased,
+-- stemmed ("checked" -> "check") and without stop words ("the", "is").
+-- GENERATED ... STORED: Postgres fills it on every INSERT (and for old rows
+-- when the column is added), so the ingest code doesn't change.
+ALTER TABLE chunks ADD COLUMN IF NOT EXISTS tsv tsvector
+  GENERATED ALWAYS AS (to_tsvector('english', content)) STORED;
+
+-- GIN = an inverted index: word -> the chunks that contain it, so a keyword
+-- search doesn't have to read every chunk.
+CREATE INDEX IF NOT EXISTS chunks_tsv_idx ON chunks USING GIN (tsv);

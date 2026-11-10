@@ -42,3 +42,36 @@ export async function searchByVector(queryVector: number[], topK = 5): Promise<S
   );
   return rows;
 }
+
+export interface KeywordResult extends Omit<SearchResult, "distance"> {
+  rank: number; // ts_rank: bigger = more of the question's words, more often
+}
+
+// Keyword search (full-text search on chunks.tsv): finds exact words like
+// "clearInterval" or "satoshin@gmx.com" that the embedding blurs.
+// The question's words are joined with OR (|), not AND: websearch_to_tsquery
+// would AND them, and "How is the ADMIN role checked?" then matched 0 chunks
+// (no chunk has admin AND role AND check). ts_rank puts chunks with more of
+// the words first. quote_literal keeps words with ' or & from breaking the
+// query. A question of only stop words ("the is a") gives no words: 0 results.
+export async function searchByKeyword(question: string, topK = 5): Promise<KeywordResult[]> {
+  const { rows } = await pool.query<KeywordResult>(
+    `WITH q AS (
+       SELECT (SELECT string_agg(quote_literal(word), ' | ')
+                 FROM unnest(tsvector_to_array(to_tsvector('english', $1))) AS word
+              )::tsquery AS query
+     )
+     SELECT d.name AS "documentName",
+            c.page,
+            c.content,
+            ts_rank(c.tsv, q.query) AS rank
+       FROM chunks c
+       JOIN documents d ON d.id = c.document_id
+       CROSS JOIN q
+      WHERE c.tsv @@ q.query
+      ORDER BY rank DESC, c.id -- c.id: same order every run when ranks tie
+      LIMIT $2`,
+    [question, topK],
+  );
+  return rows;
+}
