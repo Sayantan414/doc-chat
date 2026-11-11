@@ -11,6 +11,7 @@
 // its own tag and pretend to be outside it. This lowers the risk; it can't
 // remove it. A model can still be fooled.
 
+import type { HistoryTurn } from "../history/conversations.js";
 import type { ChatMessage } from "../llm/LlmProvider.js";
 import type { SearchResult } from "./search.js";
 
@@ -63,7 +64,16 @@ export function stripDocumentTags(text: string): string {
   return text.replace(/[<＜]\s*[/／]?\s*document\b[^>＞]*[>＞]/gi, "[tag removed]");
 }
 
-export function buildRagMessages(question: string, chunks: SearchResult[]): ChatMessage[] {
+// history: earlier complete turns of this conversation (Task 8), oldest first.
+// They go in as real user/assistant turns, so the model knows what "it" means.
+// Only what was SAID is resent, not the old documents: the documents below are
+// the ones found for this question. With no history the messages are exactly
+// the same as before Task 8 (same answers, same cache entries).
+export function buildRagMessages(
+  question: string,
+  chunks: SearchResult[],
+  history: HistoryTurn[] = [],
+): ChatMessage[] {
   // Label every chunk with exactly the citation format we want ([page N]).
   // Small models copy the patterns they SEE: an extra label like [1], [2] gets copied
   // as a citation instead of the page, so [page N] is the only bracket format here.
@@ -71,10 +81,20 @@ export function buildRagMessages(question: string, chunks: SearchResult[]): Chat
     .map((c) => `<document>\n[page ${c.page}] (${c.documentName})\n${stripDocumentTags(c.content)}\n</document>`)
     .join("\n\n");
 
+  // Earlier answers cite pages of the documents they were given, not these ones:
+  // say so only when there is history, so a first question's prompt is unchanged.
+  const citeNote = history.length
+    ? "\n\nCite only pages of the documents above, never a page from an earlier answer."
+    : "";
+
   // Context and question change every time, so they go in the user message, close together.
   return [
     { role: "system", content: SYSTEM_PROMPT },
     ...EXAMPLE,
-    { role: "user", content: `Documents:\n${context}\n\nQuestion: ${question}` },
+    ...history.flatMap((t): ChatMessage[] => [
+      { role: "user", content: t.question },
+      { role: "assistant", content: t.answer },
+    ]),
+    { role: "user", content: `Documents:\n${context}\n\nQuestion: ${question}${citeNote}` },
   ];
 }

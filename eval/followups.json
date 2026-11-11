@@ -1,0 +1,232 @@
+{
+  "description": "Follow-up questions: each case has a short fixed history (question + answer) and a follow-up. validPages = pages of `document` that answer the follow-up. mustContain / mustNotContain are checked against the rewritten search query (case-insensitive).",
+  "cases": [
+    {
+      "name": "it = NgZone",
+      "document": "angular-qa.pdf",
+      "history": [
+        {
+          "q": "What is NgZone?",
+          "a": "NgZone is an Angular service that lets you run code outside Angular's zone, so fewer change detection cycles run [page 21]."
+        }
+      ],
+      "followUp": "How do I use it to make the app faster?",
+      "validPages": [
+        21
+      ],
+      "mustContain": [
+        "NgZone"
+      ]
+    },
+    {
+      "name": "it = NgZone, REAL answer from the app",
+      "document": "angular-qa.pdf",
+      "history": [
+        {
+          "q": "What is NgZone?",
+          "a": "NgZone is an Angular service that allows you to execute code outside of Angular’s zone, which can improve performance by reducing the number of change‑detection cycles triggered by asynchronous operations. It lets you run code in a separate zone and then re‑enter Angular’s zone when you need to update component state. [page 21]"
+        }
+      ],
+      "followUp": "How do I use it to make the app faster?",
+      "validPages": [
+        21
+      ],
+      "mustContain": [
+        "NgZone"
+      ],
+      "note": "Real gpt-oss answer (saved message). With the first rewrite rule the model returned the follow-up unchanged 3/3 for this history, while the short hand-written answer above was rewritten."
+    },
+    {
+      "name": "it = Moment.js, REAL answer from the app",
+      "document": "angular-qa.pdf",
+      "history": [
+        {
+          "q": "What is Moment.js?",
+          "a": "Moment.js is a popular JavaScript library for parsing, validating, manipulating, and formatting dates [page 11]."
+        }
+      ],
+      "followUp": "How do I format a date with it?",
+      "validPages": [
+        11
+      ],
+      "mustContain": [
+        "moment"
+      ]
+    },
+    {
+      "name": "it = ViewEncapsulation",
+      "document": "angular-qa.pdf",
+      "history": [
+        {
+          "q": "What is ViewEncapsulation?",
+          "a": "ViewEncapsulation controls how a component's styles are scoped, so they don't leak to other components [page 32]."
+        }
+      ],
+      "followUp": "What are the different modes of it?",
+      "validPages": [
+        32,
+        33
+      ],
+      "mustContain": [
+        "encapsulation"
+      ]
+    },
+    {
+      "name": "the second one = Promise",
+      "document": "angular-qa.pdf",
+      "history": [
+        {
+          "q": "When should I use an Observable instead of a Promise?",
+          "a": "Use an Observable for a stream of many values that can be cancelled; a Promise gives a single value [page 28]."
+        }
+      ],
+      "followUp": "Can the second one be cancelled?",
+      "validPages": [
+        28,
+        29,
+        30
+      ],
+      "mustContain": [
+        "promise"
+      ]
+    },
+    {
+      "name": "that = route guard",
+      "document": "angular-qa.pdf",
+      "history": [
+        {
+          "q": "What is a route guard?",
+          "a": "A route guard such as CanActivate decides whether a route may be opened [page 14]."
+        }
+      ],
+      "followUp": "How would I use that for an admin-only page?",
+      "validPages": [
+        14,
+        25
+      ],
+      "mustContain": [
+        "guard"
+      ]
+    },
+    {
+      "name": "it = memory leak",
+      "document": "angular-qa.pdf",
+      "history": [
+        {
+          "q": "What causes memory leaks in Angular?",
+          "a": "Subscriptions that are never cleaned up keep components in memory after they are destroyed [page 15]."
+        }
+      ],
+      "followUp": "Which operator helps avoid it?",
+      "validPages": [
+        15,
+        19,
+        20
+      ],
+      "mustContain": [
+        "leak"
+      ]
+    },
+    {
+      "name": "it = proof-of-work",
+      "document": "bitcoin.pdf",
+      "history": [
+        {
+          "q": "What is proof-of-work?",
+          "a": "Proof-of-work means scanning for a value whose SHA-256 hash begins with a number of zero bits [page 3]."
+        }
+      ],
+      "followUp": "Why does it make the chain hard to change?",
+      "validPages": [
+        3
+      ],
+      "mustContain": [
+        "proof"
+      ]
+    },
+    {
+      "name": "that = Merkle tree",
+      "document": "bitcoin.pdf",
+      "history": [
+        {
+          "q": "How are transactions stored in a block?",
+          "a": "Transactions are hashed in a Merkle tree, with only the root included in the block's hash [page 4]."
+        }
+      ],
+      "followUp": "How does that help save disk space?",
+      "validPages": [
+        4
+      ],
+      "mustContain": [
+        "merkle"
+      ]
+    },
+    {
+      "name": "topic switch: Angular -> bitcoin",
+      "document": "bitcoin.pdf",
+      "history": [
+        {
+          "q": "What is NgZone?",
+          "a": "NgZone is an Angular service that lets you run code outside Angular's zone [page 21]."
+        }
+      ],
+      "followUp": "What is proof-of-work?",
+      "validPages": [
+        3
+      ],
+      "mustContain": [
+        "proof"
+      ],
+      "mustNotContain": [
+        "ngzone",
+        "angular",
+        "zone"
+      ],
+      "note": "The old topic must not be dragged into the new question."
+    },
+    {
+      "name": "topic switch: bitcoin -> Angular",
+      "document": "angular-qa.pdf",
+      "history": [
+        {
+          "q": "What is proof-of-work?",
+          "a": "Proof-of-work means scanning for a value whose SHA-256 hash begins with zero bits [page 3]."
+        }
+      ],
+      "followUp": "How do I make a service a singleton in Angular?",
+      "validPages": [
+        31
+      ],
+      "mustContain": [
+        "singleton"
+      ],
+      "mustNotContain": [
+        "proof",
+        "bitcoin",
+        "sha"
+      ]
+    },
+    {
+      "name": "already standalone",
+      "document": "angular-qa.pdf",
+      "history": [
+        {
+          "q": "What is NgZone?",
+          "a": "NgZone is an Angular service that lets you run code outside Angular's zone [page 21]."
+        }
+      ],
+      "followUp": "What does providedIn: 'root' mean in an Angular service?",
+      "validPages": [
+        31
+      ],
+      "mustContain": [
+        "providedin"
+      ],
+      "mustNotContain": [
+        "ngzone",
+        "zone"
+      ],
+      "note": "Already standalone: the rewrite should keep it (and not add the old topic)."
+    }
+  ]
+}

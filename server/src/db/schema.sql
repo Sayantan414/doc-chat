@@ -82,6 +82,10 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- What the search really used for this answer: the follow-up rewritten into a
+-- standalone query (Task 8), or the question itself. NULL on user messages.
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS search_query TEXT;
+
 -- "All messages of a conversation, in order" is the main query.
 CREATE INDEX IF NOT EXISTS messages_conversation_idx ON messages (conversation_id, id);
 

@@ -9,6 +9,8 @@
 //
 // Events, in order:
 //   conversation (once) {"id": 12}: the conversation this turn belongs to
+//   query   (once) {"searchQuery": "...", "rewritten": true}: what was searched
+//           (a follow-up is rewritten into a standalone query using the history)
 //   token   (many) one piece of the answer, as a JSON string
 //   sources (once) the chunks the model was given
 //   done    (once) timings in ms; cached: true when the answer came from Redis
@@ -23,7 +25,8 @@ import { llm } from "../llm/index.js";
 import { buildRagMessages } from "../retrieval/prompt.js";
 import { searchChunks } from "../retrieval/search.js";
 import { pool } from "../db/pool.js";
-import { finishTurn, startTurn, type AssistantMessage } from "../history/conversations.js";
+import { finishTurn, loadHistory, startTurn, type AssistantMessage } from "../history/conversations.js";
+import { rewriteQuery } from "../retrieval/rewrite.js";
 import { httpError } from "./httpError.js";
 import { rateLimit } from "./rateLimit.js";
 
@@ -104,7 +107,11 @@ chatRouter.post("/chat", chatRateLimit, async (req, res) => {
 
   // Saves the question and marks the conversation busy; 404 / 409 here are
   // still normal JSON errors, because the stream hasn't started.
-  const conversationId = await startTurn(parseConversationId(req.body.conversationId), question, documentIds);
+  const { conversationId, userMessageId } = await startTurn(
+    parseConversationId(req.body.conversationId),
+    question,
+    documentIds,
+  );
 
   const start = performance.now();
   // What gets saved as the assistant message in `finally`, whatever happens.
@@ -133,14 +140,25 @@ chatRouter.post("/chat", chatRateLimit, async (req, res) => {
   };
 
   try {
+    // Earlier complete turns (Task 8): they change the answer, so they are part
+    // of the cache key, the search query and the prompt.
+    const history = await loadHistory(conversationId, userMessageId);
+
     // Cache first: on a hit nothing else is needed (no embedding, search or model).
-    const cacheKey = await answerCacheKey(question, documentIds);
+    const cacheKey = await answerCacheKey(question, documentIds, history);
     const cached = await getCachedAnswer(cacheKey);
     if (cached) {
       openStream();
       const ms = Math.round(performance.now() - start);
+      if (cached.searchQuery) sendEvent(res, "query", { searchQuery: cached.searchQuery });
       sendEvent(res, "token", cached.answer);
-      Object.assign(turn, { content: cached.answer, status: "done", sources: cached.sources, cached: true });
+      Object.assign(turn, {
+        content: cached.answer,
+        status: "done",
+        sources: cached.sources,
+        cached: true,
+        searchQuery: cached.searchQuery,
+      });
       lastEvents = () => {
         sendEvent(res, "sources", cached.sources);
         sendEvent(res, "done", { retrievalMs: 0, firstTokenMs: ms, totalMs: ms, tokens: cached.tokens, cached: true });
@@ -151,14 +169,20 @@ chatRouter.post("/chat", chatRateLimit, async (req, res) => {
 
     // Retrieval runs BEFORE the stream starts, so a failure here (e.g. DB down)
     // is still a normal JSON error with a proper status code.
-    const chunks = await searchChunks(question, 5, documentIds);
+    // A follow-up ("How do I use it?") is rewritten into a standalone query
+    // first; without history, or if the rewrite fails, the question as typed.
+    const rewrite = await rewriteQuery(question, history);
+    turn.searchQuery = rewrite.query;
+    const chunks = await searchChunks(rewrite.query, 5, documentIds);
     turn.sources = chunks;
     const retrievalMs = Math.round(performance.now() - start);
-    const messages = buildRagMessages(question, chunks);
+    const messages = buildRagMessages(question, chunks, history);
 
     // From here on the status (200) and headers are sent and can't change.
     // Errors after this point must travel as an "error" event instead.
     openStream();
+    // What was really searched, so the UI (and the log) can show a rewrite.
+    sendEvent(res, "query", { searchQuery: rewrite.query, rewritten: rewrite.query !== question });
 
     let firstTokenMs: number | undefined;
     let tokens = 0;
@@ -176,12 +200,15 @@ chatRouter.post("/chat", chatRateLimit, async (req, res) => {
         const totalMs = Math.round(performance.now() - start);
         lastEvents = () => {
           sendEvent(res, "sources", chunks);
-          sendEvent(res, "done", { retrievalMs, firstTokenMs, totalMs, tokens });
+          sendEvent(res, "done", { retrievalMs, rewriteMs: rewrite.ms, firstTokenMs, totalMs, tokens });
         };
-        console.log(`[chat] ${tokens} tokens, retrieval ${retrievalMs} ms, first token ${firstTokenMs} ms, total ${totalMs} ms`);
+        console.log(
+          `[chat] ${tokens} tokens, history ${history.length} turns, rewrite ${rewrite.ms} ms, ` +
+            `retrieval ${retrievalMs} ms, first token ${firstTokenMs} ms, total ${totalMs} ms`,
+        );
         // Only a complete answer is cached (not a stopped or failed one).
         // Not awaited: the client should not wait for Redis.
-        void setCachedAnswer(cacheKey, { answer: turn.content, sources: chunks, tokens });
+        void setCachedAnswer(cacheKey, { answer: turn.content, sources: chunks, tokens, searchQuery: rewrite.query });
       }
     } catch (err) {
       if (clientGone) {

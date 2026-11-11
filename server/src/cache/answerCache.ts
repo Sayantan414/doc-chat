@@ -9,6 +9,12 @@
 //   - the chat model (Groq's answer is not Ollama's)
 //   - the system prompt (editing the prompt changes the answers)
 //   - the retrieval version (another search finds other chunks)
+//   - the conversation history used in the prompt (Task 8): "How do I use it?"
+//     means something else in every conversation. Left out when empty, so a
+//     first question keeps the same key as before and shares cached answers.
+//   - with history only: the rewrite prompt, which decides what a follow-up
+//     searches for. Missing at first, so a fixed rewrite rule still served
+//     the old "I don't know" from the cache (found in Task 8 testing).
 //
 // The cache is only a speed-up: if Redis is down or hangs, chat must still
 // work. So every Redis call has a short timeout and errors only get logged.
@@ -16,8 +22,10 @@
 import { createHash } from "node:crypto";
 import { config } from "../config.js";
 import { pool } from "../db/pool.js";
+import type { HistoryTurn } from "../history/conversations.js";
 import { redis } from "../db/redis.js";
 import { SYSTEM_PROMPT } from "../retrieval/prompt.js";
+import { REWRITE_PROMPT } from "../retrieval/rewrite.js";
 import { RETRIEVAL_VERSION, type SearchResult } from "../retrieval/search.js";
 import { withTimeout } from "../withTimeout.js";
 
@@ -30,6 +38,7 @@ export interface CachedAnswer {
   answer: string;
   sources: SearchResult[];
   tokens: number; // how many tokens the model streamed the first time
+  searchQuery?: string; // what was searched (the rewritten follow-up)
 }
 
 const model = config.groq ? `groq:${config.groq.model}` : `ollama:${config.chatModel}`;
@@ -54,13 +63,20 @@ async function documentSet(documentIds?: number[]): Promise<string> {
   return rows[0].docs ?? "";
 }
 
-export async function answerCacheKey(question: string, documentIds?: number[]): Promise<string> {
+export async function answerCacheKey(
+  question: string,
+  documentIds?: number[],
+  history: HistoryTurn[] = [],
+): Promise<string> {
   const parts = {
     q: normalize(question),
     docs: await documentSet(documentIds),
     model,
     prompt: SYSTEM_PROMPT,
     retrieval: RETRIEVAL_VERSION,
+    // undefined is dropped by JSON.stringify: no history = the key of before.
+    history: history.length ? history : undefined,
+    rewrite: history.length ? REWRITE_PROMPT : undefined,
   };
   return "answer:" + createHash("sha256").update(JSON.stringify(parts)).digest("hex");
 }

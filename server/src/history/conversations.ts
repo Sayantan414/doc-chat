@@ -19,7 +19,7 @@ export async function startTurn(
   conversationId: number | undefined,
   question: string,
   documentIds: number[] | undefined,
-): Promise<number> {
+): Promise<{ conversationId: number; userMessageId: number }> {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -48,12 +48,12 @@ export async function startTurn(
       }
       id = conversationId;
     }
-    await client.query(
-      "INSERT INTO messages (conversation_id, role, content, document_ids) VALUES ($1, 'user', $2, $3)",
+    const inserted = await client.query<{ id: number }>(
+      "INSERT INTO messages (conversation_id, role, content, document_ids) VALUES ($1, 'user', $2, $3) RETURNING id",
       [id, question, documentIds ?? null],
     );
     await client.query("COMMIT");
-    return id;
+    return { conversationId: id, userMessageId: inserted.rows[0].id };
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     throw err;
@@ -64,6 +64,7 @@ export async function startTurn(
 
 export interface AssistantMessage {
   content: string;
+  searchQuery?: string; // what was really searched (the rewritten follow-up)
   status: "done" | "stopped" | "error";
   error?: string;
   sources?: SearchResult[];
@@ -85,8 +86,8 @@ export async function finishTurn(conversationId: number, message: AssistantMessa
   try {
     await client.query("BEGIN");
     await client.query(
-      `INSERT INTO messages (conversation_id, role, content, status, error, sources, document_ids, cached)
-       VALUES ($1, 'assistant', $2, $3, $4, $5, $6, $7)`,
+      `INSERT INTO messages (conversation_id, role, content, status, error, sources, document_ids, cached, search_query)
+       VALUES ($1, 'assistant', $2, $3, $4, $5, $6, $7, $8)`,
       [
         conversationId,
         message.content,
@@ -95,6 +96,7 @@ export async function finishTurn(conversationId: number, message: AssistantMessa
         message.sources ? JSON.stringify(message.sources) : null,
         message.documentIds ?? null,
         message.cached ?? false,
+        message.searchQuery ?? null,
       ],
     );
     await client.query("UPDATE conversations SET answering_since = NULL WHERE id = $1", [conversationId]);
@@ -112,6 +114,43 @@ export async function finishTurn(conversationId: number, message: AssistantMessa
 function errorText(err: unknown): string {
   const e = err as { message?: string; code?: string };
   return e.message || e.code || String(err);
+}
+
+export interface HistoryTurn {
+  question: string;
+  answer: string;
+}
+
+// The last `maxTurns` COMPLETE turns before message `beforeMessageId`, oldest
+// first: a user message directly followed by an assistant answer with status
+// 'done'. Skipped: a question without an answer (e.g. the save failed), an
+// 'error' answer, and a 'stopped' (half-written) answer, together with its
+// question. Long answers are cut, to keep the prompt within Groq's token limits.
+export async function loadHistory(
+  conversationId: number,
+  beforeMessageId: number,
+  maxTurns = 3,
+  maxAnswerChars = 600,
+): Promise<HistoryTurn[]> {
+  // Only the last messages are read: 10 per wanted turn leaves room for
+  // skipped ones (failed or stopped answers) without reading a whole long chat.
+  const { rows } = await pool.query<{ role: string; content: string; status: string }>(
+    `SELECT role, content, status FROM messages
+      WHERE conversation_id = $1 AND id < $2
+      ORDER BY id DESC LIMIT $3`,
+    [conversationId, beforeMessageId, maxTurns * 10],
+  );
+  rows.reverse(); // oldest first
+  const turns: HistoryTurn[] = [];
+  for (let i = 0; i + 1 < rows.length; i++) {
+    const [q, a] = [rows[i], rows[i + 1]];
+    if (q.role === "user" && a.role === "assistant" && a.status === "done" && a.content.trim()) {
+      const answer = a.content.length > maxAnswerChars ? a.content.slice(0, maxAnswerChars) + "…" : a.content;
+      turns.push({ question: q.content, answer });
+      i++; // the pair is used; continue after the answer
+    }
+  }
+  return turns.slice(-maxTurns);
 }
 
 export interface ConversationSummary {
@@ -144,6 +183,7 @@ export interface StoredMessage {
   sources: SearchResult[] | null;
   documentIds: number[] | null;
   cached: boolean;
+  searchQuery: string | null;
   createdAt: string;
 }
 
@@ -155,7 +195,8 @@ export async function getConversation(id: number) {
   );
   if (rows.length === 0) return null;
   const messages = await pool.query<StoredMessage>(
-    `SELECT id, role, content, status, error, sources, document_ids AS "documentIds", cached, created_at AS "createdAt"
+    `SELECT id, role, content, status, error, sources, document_ids AS "documentIds", cached,
+            search_query AS "searchQuery", created_at AS "createdAt"
        FROM messages WHERE conversation_id = $1 ORDER BY id`,
     [id],
   );
