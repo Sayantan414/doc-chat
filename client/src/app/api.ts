@@ -52,6 +52,7 @@ export interface ChatTimings {
 export type ChatEvent =
   | { type: 'connected' } // headers arrived: the server has the question
   | { type: 'token'; text: string }
+  | { type: 'conversation'; id: number }
   | { type: 'sources'; sources: Source[] }
   | { type: 'done'; timings: ChatTimings }
   | { type: 'error'; message: string };
@@ -69,15 +70,17 @@ export class ChatRequestError extends Error {
 // Reads the Server-Sent Events of POST /api/chat and yields them one by one.
 // EventSource can't send a POST body, so we read fetch's ReadableStream ourselves.
 // documentIds: search only these documents; undefined = all (not sent at all).
+// conversationId: continue that conversation; undefined = start a new one.
 export async function* streamChat(
   question: string,
   signal: AbortSignal,
   documentIds?: number[],
+  conversationId?: number,
 ): AsyncGenerator<ChatEvent> {
   const res = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question, documentIds }), // JSON drops an undefined field
+    body: JSON.stringify({ question, documentIds, conversationId }), // JSON drops undefined fields
     signal, // aborting it closes the connection; the server then stops Ollama
   });
 
@@ -120,6 +123,8 @@ function parseSseMessage(message: string): ChatEvent | null {
 
   const payload = JSON.parse(data);
   switch (name) {
+    case 'conversation':
+      return { type: 'conversation', id: payload.id };
     case 'token':
       return { type: 'token', text: payload };
     case 'sources':

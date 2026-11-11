@@ -5,6 +5,7 @@
 import express, { type ErrorRequestHandler } from "express";
 import { config } from "./config.js";
 import { chatRouter } from "./routes/chat.js";
+import { conversationsRouter } from "./routes/conversations.js";
 import { documentsRouter } from "./routes/documents.js";
 import { healthRouter } from "./routes/health.js";
 import { jobsRouter } from "./routes/jobs.js";
@@ -17,6 +18,7 @@ app.use(express.json());
 app.use("/api", healthRouter);
 app.use("/api", documentsRouter);
 app.use("/api", chatRouter);
+app.use("/api", conversationsRouter);
 app.use("/api", jobsRouter);
 
 // Error handler: Express knows it by its 4 parameters and must come after the routes.

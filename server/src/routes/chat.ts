@@ -1,9 +1,14 @@
 // POST /api/chat: answer a question from the documents, streamed with Server-Sent Events.
-// Body: { "question": "...", "documentIds": [7, 8] }. documentIds is optional:
-// missing or [] = search all documents. Same pipeline as scripts/rag.ts:
+// Body: { "question": "...", "documentIds": [7, 8], "conversationId": 12 }.
+// documentIds is optional: missing or [] = search all documents.
+// conversationId is optional: missing = a new conversation. The question and
+// the answer are saved in Postgres (history/conversations.ts). A conversation
+// that is still being answered rejects a second question with 409.
+// Same pipeline as scripts/rag.ts:
 // search -> build prompt -> stream the answer -> send the sources.
 //
 // Events, in order:
+//   conversation (once) {"id": 12}: the conversation this turn belongs to
 //   token   (many) one piece of the answer, as a JSON string
 //   sources (once) the chunks the model was given
 //   done    (once) timings in ms; cached: true when the answer came from Redis
@@ -18,6 +23,7 @@ import { llm } from "../llm/index.js";
 import { buildRagMessages } from "../retrieval/prompt.js";
 import { searchChunks } from "../retrieval/search.js";
 import { pool } from "../db/pool.js";
+import { finishTurn, startTurn, type AssistantMessage } from "../history/conversations.js";
 import { httpError } from "./httpError.js";
 import { rateLimit } from "./rateLimit.js";
 
@@ -77,6 +83,15 @@ function startStream(res: Response) {
   res.write(": connected\n\n");
 }
 
+// conversationId from the body: missing = start a new conversation.
+function parseConversationId(value: unknown): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!Number.isInteger(value) || (value as number) <= 0 || (value as number) > MAX_ID) {
+    throw httpError(400, "conversationId must be a positive integer");
+  }
+  return value as number;
+}
+
 chatRouter.post("/chat", chatRateLimit, async (req, res) => {
   // req.body is undefined when the request had no JSON body.
   const question = typeof req.body?.question === "string" ? req.body.question.trim() : "";
@@ -87,73 +102,115 @@ chatRouter.post("/chat", chatRateLimit, async (req, res) => {
   const documentIds = parseDocumentIds(req.body.documentIds);
   if (documentIds) await checkDocumentsExist(documentIds);
 
+  // Saves the question and marks the conversation busy; 404 / 409 here are
+  // still normal JSON errors, because the stream hasn't started.
+  const conversationId = await startTurn(parseConversationId(req.body.conversationId), question, documentIds);
+
   const start = performance.now();
-
-  // Cache first: on a hit nothing else is needed (no embedding, search or model).
-  const cacheKey = await answerCacheKey(question, documentIds);
-  const cached = await getCachedAnswer(cacheKey);
-  if (cached) {
-    startStream(res);
-    const ms = Math.round(performance.now() - start);
-    sendEvent(res, "token", cached.answer);
-    sendEvent(res, "sources", cached.sources);
-    sendEvent(res, "done", { retrievalMs: 0, firstTokenMs: ms, totalMs: ms, tokens: cached.tokens, cached: true });
-    res.end();
-    console.log(`[chat] cache hit in ${ms} ms`);
-    return;
-  }
-
-  // Retrieval runs BEFORE the stream starts, so a failure here (e.g. DB down)
-  // is still a normal JSON error with a proper status code.
-  const chunks = await searchChunks(question, 5, documentIds);
-  const retrievalMs = Math.round(performance.now() - start);
-  const messages = buildRagMessages(question, chunks);
-
-  // From here on the status (200) and headers are sent and can't change.
-  // Errors after this point must travel as an "error" event instead.
-  startStream(res);
-
-  // If the client leaves early, abort the model right away so Ollama stops working
-  // for nobody (it handles one request at a time, so the next question would wait).
-  // "close" also fires after a normal res.end(), so only count it if we hadn't finished.
-  const abort = new AbortController();
+  // What gets saved as the assistant message in `finally`, whatever happens.
+  const turn: AssistantMessage = { content: "", status: "error", documentIds };
+  let streaming = false;
   let clientGone = false;
-  res.on("close", () => {
-    if (res.writableEnded) return;
-    clientGone = true;
-    abort.abort();
-  });
+  const abort = new AbortController();
+  // The last events (sources + done, or error) are sent AFTER the answer is
+  // saved: a client that asks its next question right after "done" must find
+  // the conversation free already, or it would get a 409.
+  let lastEvents: (() => void) | undefined;
 
-  let firstTokenMs: number | undefined;
-  let tokens = 0;
-  let answer = ""; // the whole answer, for the cache
+  // Headers, the ": connected" comment, then which conversation this is.
+  const openStream = () => {
+    startStream(res);
+    streaming = true;
+    sendEvent(res, "conversation", { id: conversationId });
+    // If the client leaves early, abort the model right away so it stops working
+    // for nobody. "close" also fires after a normal res.end(), so only count it
+    // if we hadn't finished.
+    res.on("close", () => {
+      if (res.writableEnded) return;
+      clientGone = true;
+      abort.abort();
+    });
+  };
+
   try {
-    for await (const token of llm.chat(messages, { temperature: 0, signal: abort.signal })) {
-      firstTokenMs ??= Math.round(performance.now() - start);
-      tokens++;
-      answer += token;
-      sendEvent(res, "token", token);
+    // Cache first: on a hit nothing else is needed (no embedding, search or model).
+    const cacheKey = await answerCacheKey(question, documentIds);
+    const cached = await getCachedAnswer(cacheKey);
+    if (cached) {
+      openStream();
+      const ms = Math.round(performance.now() - start);
+      sendEvent(res, "token", cached.answer);
+      Object.assign(turn, { content: cached.answer, status: "done", sources: cached.sources, cached: true });
+      lastEvents = () => {
+        sendEvent(res, "sources", cached.sources);
+        sendEvent(res, "done", { retrievalMs: 0, firstTokenMs: ms, totalMs: ms, tokens: cached.tokens, cached: true });
+      };
+      console.log(`[chat] cache hit in ${ms} ms`);
+      return;
     }
 
-    if (!clientGone) {
-      const totalMs = Math.round(performance.now() - start);
-      sendEvent(res, "sources", chunks);
-      sendEvent(res, "done", { retrievalMs, firstTokenMs, totalMs, tokens });
-      console.log(`[chat] ${tokens} tokens, retrieval ${retrievalMs} ms, first token ${firstTokenMs} ms, total ${totalMs} ms`);
-      // Only a complete answer is cached (not a stopped or failed one).
-      // Not awaited: the client has everything already and should not wait for Redis.
-      void setCachedAnswer(cacheKey, { answer, sources: chunks, tokens });
+    // Retrieval runs BEFORE the stream starts, so a failure here (e.g. DB down)
+    // is still a normal JSON error with a proper status code.
+    const chunks = await searchChunks(question, 5, documentIds);
+    turn.sources = chunks;
+    const retrievalMs = Math.round(performance.now() - start);
+    const messages = buildRagMessages(question, chunks);
+
+    // From here on the status (200) and headers are sent and can't change.
+    // Errors after this point must travel as an "error" event instead.
+    openStream();
+
+    let firstTokenMs: number | undefined;
+    let tokens = 0;
+    try {
+      for await (const token of llm.chat(messages, { temperature: 0, signal: abort.signal })) {
+        firstTokenMs ??= Math.round(performance.now() - start);
+        tokens++;
+        turn.content += token;
+        sendEvent(res, "token", token);
+      }
+      if (clientGone) {
+        turn.status = "stopped";
+      } else {
+        turn.status = "done";
+        const totalMs = Math.round(performance.now() - start);
+        lastEvents = () => {
+          sendEvent(res, "sources", chunks);
+          sendEvent(res, "done", { retrievalMs, firstTokenMs, totalMs, tokens });
+        };
+        console.log(`[chat] ${tokens} tokens, retrieval ${retrievalMs} ms, first token ${firstTokenMs} ms, total ${totalMs} ms`);
+        // Only a complete answer is cached (not a stopped or failed one).
+        // Not awaited: the client should not wait for Redis.
+        void setCachedAnswer(cacheKey, { answer: turn.content, sources: chunks, tokens });
+      }
+    } catch (err) {
+      if (clientGone) {
+        // Expected: our abort makes the model call throw an AbortError.
+        turn.status = "stopped";
+        const ms = Math.round(performance.now() - start);
+        console.log(`[chat] client disconnected after ${tokens} tokens (${ms} ms), generation stopped`);
+      } else {
+        console.error(err);
+        turn.status = "error";
+        turn.error = (err as Error).message;
+        lastEvents = () => sendEvent(res, "error", { error: turn.error });
+      }
     }
   } catch (err) {
-    if (clientGone) {
-      // Expected: our abort makes the model call throw an AbortError.
-      const ms = Math.round(performance.now() - start);
-      console.log(`[chat] client disconnected after ${tokens} tokens (${ms} ms), generation stopped`);
-    } else {
-      console.error(err);
-      sendEvent(res, "error", { error: (err as Error).message });
-    }
+    // Before the stream: cache key, retrieval (DB, Ollama). Saved as an error
+    // message below, then the JSON error handler answers.
+    turn.status = "error";
+    turn.error = (err as Error).message;
+    if (!streaming) throw err;
+    console.error(err);
+    lastEvents = () => sendEvent(res, "error", { error: turn.error });
   } finally {
-    res.end();
+    // Always saved (done, stopped or error), and the conversation is free
+    // again. finishTurn never throws: a failed save is only logged.
+    await finishTurn(conversationId, turn);
+    if (streaming) {
+      if (!clientGone) lastEvents?.();
+      res.end();
+    }
   }
 });

@@ -36,6 +36,9 @@ export class ChatPanel {
   );
 
   protected readonly turns = signal<ChatTurn[]>([]);
+  // The saved conversation these turns belong to (from the "conversation"
+  // event). Sent with every question, so follow-ups land in the same one.
+  private conversationId?: number;
   protected readonly question = signal('');
   protected readonly busy = computed(() =>
     ['sending', 'reading', 'streaming'].includes(this.turns().at(-1)?.status ?? ''),
@@ -135,12 +138,15 @@ export class ChatPanel {
     this.timer = setInterval(() => this.now.set(Date.now()), 1000);
 
     try {
-      for await (const event of streamChat(question, this.abort.signal, this.store.documentIds())) {
+      for await (const event of streamChat(question, this.abort.signal, this.store.documentIds(), this.conversationId)) {
         // Each update replaces the last turn with a new object, so the signal
         // notices the change and Angular re-renders just that part (no zone.js).
         switch (event.type) {
           case 'connected':
             this.updateLast((t) => ({ ...t, status: 'reading' }));
+            break;
+          case 'conversation':
+            this.conversationId = event.id;
             break;
           case 'token':
             this.updateLast((t) => ({ ...t, status: 'streaming', answer: t.answer + event.text }));
