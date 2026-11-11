@@ -153,6 +153,23 @@ export async function loadHistory(
   return turns.slice(-maxTurns);
 }
 
+// Deletes a conversation and (ON DELETE CASCADE) all its messages. Refused
+// with 409 while an answer is being written: finishTurn would then fail to
+// save into a conversation that no longer exists. Same 5-minute rule as
+// startTurn, so a conversation left busy by a crash can still be deleted.
+export async function deleteConversation(id: number): Promise<void> {
+  const { rowCount } = await pool.query(
+    `DELETE FROM conversations
+      WHERE id = $1 AND (answering_since IS NULL OR answering_since < now() - $2::interval)`,
+    [id, BUSY_TIMEOUT],
+  );
+  if (rowCount) return;
+  const exists = await pool.query("SELECT 1 FROM conversations WHERE id = $1", [id]);
+  throw exists.rowCount
+    ? httpError(409, "An answer in this conversation is still being written. Stop it first.")
+    : httpError(404, `No conversation ${id}`);
+}
+
 export interface ConversationSummary {
   id: number;
   title: string;

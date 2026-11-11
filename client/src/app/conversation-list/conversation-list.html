@@ -1,0 +1,55 @@
+<section class="flex min-h-0 flex-1 flex-col">
+  <div class="shrink-0 px-3 pb-2 pt-3">
+    <button
+      type="button"
+      class="flex w-full items-center justify-center gap-2 rounded-lg border border-line px-3 py-2 text-sm font-medium transition-colors hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50"
+      [disabled]="chats.busy()"
+      [title]="chats.busy() ? 'Wait for the answer, or stop it first' : 'Start a new conversation'"
+      (click)="newChat()"
+    >
+      <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14" /></svg>
+      New chat
+    </button>
+    @if (chats.busy()) {
+      <p class="mt-2 text-center text-xs text-muted">An answer is being written. Stop it to switch chats.</p>
+    }
+    @if (chats.error(); as message) {
+      <p class="mt-2 rounded-lg bg-danger-soft px-2.5 py-1.5 text-xs text-danger" role="alert">{{ message }}</p>
+    }
+  </div>
+
+  <ul class="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-4" [class.opacity-60]="chats.busy()">
+    @for (c of chats.conversations(); track c.id) {
+      <li
+        class="group flex items-center gap-1 rounded-lg transition-colors"
+        [class.bg-accent-soft]="chats.activeId() === c.id"
+        [class.hover:bg-subtle]="chats.activeId() !== c.id"
+      >
+        <button
+          type="button"
+          class="min-w-0 flex-1 px-2.5 py-2 text-left disabled:cursor-not-allowed"
+          [disabled]="chats.busy()"
+          [attr.aria-current]="chats.activeId() === c.id ? 'true' : null"
+          (click)="open(c)"
+        >
+          <div class="truncate text-sm font-medium" [title]="c.title">{{ c.title }}</div>
+          <div class="text-xs text-muted" [title]="c.updatedAt | date: 'd MMM y, HH:mm'">
+            {{ c.updatedAt | date: 'd MMM, HH:mm' }} · {{ c.messageCount }} {{ c.messageCount === 1 ? 'message' : 'messages' }}
+          </div>
+        </button>
+        <button
+          type="button"
+          class="icon-btn mr-1 size-8 shrink-0 hover:bg-danger-soft! hover:text-danger! md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+          [disabled]="chats.busy() || deleting() === c.id"
+          [attr.aria-label]="'Delete conversation ' + c.title"
+          title="Delete"
+          (click)="remove(c)"
+        >
+          <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M10 11v6M14 11v6" /></svg>
+        </button>
+      </li>
+    } @empty {
+      <li class="px-4 py-8 text-center text-sm text-muted">No conversations yet.<br />Ask a question to start one.</li>
+    }
+  </ul>
+</section>

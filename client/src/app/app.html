@@ -3,8 +3,8 @@
   <button
     type="button"
     class="icon-btn"
-    [attr.aria-label]="docsOpen() ? 'Hide documents' : 'Show documents'"
-    [title]="docsOpen() ? 'Hide documents' : 'Show documents'"
+    [attr.aria-label]="docsOpen() ? 'Hide sidebar' : 'Show sidebar'"
+    [title]="docsOpen() ? 'Hide sidebar' : 'Show sidebar'"
     [attr.aria-expanded]="docsOpen()"
     (click)="toggleDocs()"
   >
@@ -118,7 +118,7 @@
     <div class="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px] md:hidden" (click)="toggleDocs()" aria-hidden="true"></div>
   }
 
-  <!-- Documents drawer. Desktop: a column that slides away and gives the chat
+  <!-- Sidebar drawer (chats and documents). Desktop: a column that slides away and gives the chat
        the space. Phones: slides in over the chat. inert while closed, so its
        buttons can't be reached with Tab. -->
   <aside
@@ -128,12 +128,38 @@
     [class.shadow-2xl]="docsOpen()"
     [attr.inert]="docsOpen() ? null : ''"
   >
-    <div class="flex h-14 shrink-0 items-center justify-end border-b border-line px-3 md:hidden">
-      <button type="button" class="icon-btn" aria-label="Close documents" (click)="toggleDocs()">
+    <div class="flex h-14 shrink-0 items-center gap-2 border-b border-line px-3">
+      <!-- Two tabs: the saved conversations and the documents. -->
+      <div class="flex flex-1 rounded-lg bg-subtle p-0.5 text-sm font-medium" role="tablist" aria-label="Sidebar">
+        @for (tab of tabs; track tab.id) {
+          <button
+            type="button"
+            role="tab"
+            class="flex-1 rounded-md px-3 py-1.5 transition-colors"
+            [class.bg-surface]="sidebarTab() === tab.id"
+            [class.shadow-sm]="sidebarTab() === tab.id"
+            [class.text-muted]="sidebarTab() !== tab.id"
+            [attr.aria-selected]="sidebarTab() === tab.id"
+            (click)="sidebarTab.set(tab.id)"
+          >
+            {{ tab.label }}
+          </button>
+        }
+      </div>
+      <button type="button" class="icon-btn md:hidden" aria-label="Close sidebar" (click)="toggleDocs()">
         <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
       </button>
     </div>
-    <app-upload-panel class="flex min-h-0 flex-1 flex-col" />
+    <!-- Both stay alive (hidden, not removed), so the upload polling and the
+         chat list keep their state when switching tabs. Hidden on a wrapper
+         div: upload-panel.css sets :host { display: flex }, and un-layered
+         component CSS beats Tailwind's `hidden` (which is in a CSS layer). -->
+    <div class="min-h-0 flex-1 flex-col" [class.flex]="sidebarTab() === 'chats'" [class.hidden]="sidebarTab() !== 'chats'">
+      <app-conversation-list class="flex min-h-0 flex-1 flex-col" (picked)="onChatPicked()" />
+    </div>
+    <div class="min-h-0 flex-1 flex-col" [class.flex]="sidebarTab() === 'docs'" [class.hidden]="sidebarTab() !== 'docs'">
+      <app-upload-panel class="flex min-h-0 flex-1 flex-col" />
+    </div>
   </aside>
 
   <main class="flex min-h-0 min-w-0 flex-1 flex-col">

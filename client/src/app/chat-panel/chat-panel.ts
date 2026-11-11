@@ -1,23 +1,10 @@
 import { DecimalPipe } from '@angular/common';
 import { Component, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { MarkdownComponent } from 'ngx-markdown';
-import { ChatRequestError, ChatTimings, Source, streamChat } from '../api';
-import { DocumentStore } from '../document-store';
+import { ChatRequestError, streamChat } from '../api';
+import { ChatStore, ChatTurn } from '../chat-store';
 import { Citations } from '../citations/citations';
-
-// One question and its answer.
-//   sending   = request sent, waiting for the server's headers
-//   reading   = server answered "connected": retrieval done, the model reads the prompt
-//   streaming = tokens are arriving
-interface ChatTurn {
-  question: string;
-  answer: string;
-  status: 'sending' | 'reading' | 'streaming' | 'done' | 'stopped' | 'error';
-  sources: Source[];
-  timings?: ChatTimings;
-  error?: string;
-  startedAt: number;
-}
+import { DocumentStore } from '../document-store';
 
 @Component({
   selector: 'app-chat-panel',
@@ -35,14 +22,12 @@ export class ChatPanel {
       .join(', '),
   );
 
-  protected readonly turns = signal<ChatTurn[]>([]);
-  // The saved conversation these turns belong to (from the "conversation"
-  // event). Sent with every question, so follow-ups land in the same one.
-  private conversationId?: number;
+  // The open conversation and its turns live in ChatStore, so the sidebar
+  // list can open another one or start a new chat.
+  protected readonly chats = inject(ChatStore);
+  protected readonly turns = this.chats.turns;
+  protected readonly busy = this.chats.busy;
   protected readonly question = signal('');
-  protected readonly busy = computed(() =>
-    ['sending', 'reading', 'streaming'].includes(this.turns().at(-1)?.status ?? ''),
-  );
 
   // Ticks once a second while busy, so the template can show "waiting 23 s".
   protected readonly now = signal(Date.now());
@@ -138,7 +123,9 @@ export class ChatPanel {
     this.timer = setInterval(() => this.now.set(Date.now()), 1000);
 
     try {
-      for await (const event of streamChat(question, this.abort.signal, this.store.documentIds(), this.conversationId)) {
+      // activeId: follow-ups land in the same saved conversation (undefined = a new one).
+      const conversationId = this.chats.activeId();
+      for await (const event of streamChat(question, this.abort.signal, this.store.documentIds(), conversationId)) {
         // Each update replaces the last turn with a new object, so the signal
         // notices the change and Angular re-renders just that part (no zone.js).
         switch (event.type) {
@@ -146,7 +133,7 @@ export class ChatPanel {
             this.updateLast((t) => ({ ...t, status: 'reading' }));
             break;
           case 'conversation':
-            this.conversationId = event.id;
+            this.chats.conversationStarted(event.id);
             break;
           case 'token':
             this.updateLast((t) => ({ ...t, status: 'streaming', answer: t.answer + event.text }));
@@ -181,6 +168,8 @@ export class ChatPanel {
       );
     } finally {
       clearInterval(this.timer);
+      // updatedAt changed: the list re-sorts with this conversation on top.
+      void this.chats.loadList();
     }
   }
 

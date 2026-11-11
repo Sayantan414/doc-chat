@@ -1,5 +1,6 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { ChatPanel } from './chat-panel/chat-panel';
+import { ConversationList } from './conversation-list/conversation-list';
 import { ThemeService } from './theme';
 import { UploadPanel } from './upload-panel/upload-panel';
 
@@ -13,7 +14,7 @@ interface Health {
 
 @Component({
   selector: 'app-root',
-  imports: [ChatPanel, UploadPanel],
+  imports: [ChatPanel, ConversationList, UploadPanel],
   templateUrl: './app.html',
   styleUrl: './app.css',
   host: {
@@ -35,6 +36,12 @@ export class App {
   // The documents drawer. On desktop it starts open (or as the user last left
   // it); on phones it starts closed, since there it covers the chat.
   protected readonly docsOpen = signal(isDesktop() ? readDocsPreference() : false);
+  // Which list the sidebar shows. Chats first: that is where you return to.
+  protected readonly sidebarTab = signal<'chats' | 'docs'>('chats');
+  protected readonly tabs = [
+    { id: 'chats', label: 'Chats' },
+    { id: 'docs', label: 'Documents' },
+  ] as const;
 
   protected readonly overall = computed<'checking' | 'ok' | 'down'>(() => {
     if (this.unreachable()) return 'down';
@@ -65,6 +72,11 @@ export class App {
         // storage blocked: the choice just isn't remembered
       }
     }
+  }
+
+  // On phones the drawer covers the chat: close it once a chat is picked.
+  protected onChatPicked() {
+    if (!isDesktop()) this.docsOpen.set(false);
   }
 
   protected onEscape() {
